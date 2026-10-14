@@ -1,0 +1,177 @@
+name: Sürüm
+
+on:
+  push:
+    tags: ['v*']
+  # Elle başlatma (Actions → Sürüm → Run workflow): etiket, sürüm
+  # yayımlanırken GitHub'da bu commit üzerinde oluşturulur.
+  workflow_dispatch:
+    inputs:
+      surum:
+        description: Sürüm etiketi (ör. v0.3.1); paket sürümüyle aynı olmalı
+        required: true
+
+env:
+  # Etikete giden sürüm: elle başlatmada girdi, etiket gönderiminde etiketin adı.
+  ETIKET: ${{ inputs.surum || github.ref_name }}
+  NDK_SURUM: 28.2.13676358
+
+# Varsayılan: yalnız okuma. Yazma izni yalnız sürümü oluşturan işte.
+permissions:
+  contents: read
+
+jobs:
+  # İmzalı APK ve AAB. Önbellek kullanılmaz; yayın derlemesi başka işlerin
+  # önbelleğiyle zehirlenemez. İmza anahtarı yalnız bu işin gizli
+  # değerlerindedir ve iş bitince silinir.
+  paket:
+    name: APK ve AAB (arm64)
+    # Elle başlatma yalnız main dalından.
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Etiket ve sürüm denetimi
+        run: |
+          node scripts/surum-denetle.mjs --etiket "${ETIKET}"
+          node scripts/kilit-denetle.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - name: Android SDK ve NDK
+        run: |
+          SDK="$ANDROID_HOME"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -d "$SDK/ndk/$NDK_SURUM" ] || yes | "$SDKM" --install "ndk;$NDK_SURUM" > /dev/null
+          [ -d "$SDK/build-tools/36.0.0" ] || yes | "$SDKM" --install "build-tools;36.0.0" > /dev/null
+          [ -d "$SDK/platforms/android-36" ] || yes | "$SDKM" --install "platforms;android-36" > /dev/null
+          NDK="$SDK/ndk/$NDK_SURUM"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android24-clang"
+          {
+            echo "NDK_HOME=$NDK"
+            echo "ANDROID_NDK_HOME=$NDK"
+            echo "ANDROID_NDK_ROOT=$NDK"
+            echo "CC_aarch64_linux_android=$BIN/aarch64-linux-android24-clang"
+            echo "CXX_aarch64_linux_android=$BIN/aarch64-linux-android24-clang++"
+            echo "AR_aarch64_linux_android=$BIN/llvm-ar"
+            echo "RANLIB_aarch64_linux_android=$BIN/llvm-ranlib"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$BIN/aarch64-linux-android24-clang"
+            echo "BUILD_TOOLS=$SDK/build-tools/36.0.0"
+          } >> "$GITHUB_ENV"
+      - name: Kilit tutarlı mı?
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: İmza anahtarı
+        # Gizli değerler tanımlıysa keystore.properties yazılır; değilse paket
+        # imzasız üretilir (yalnız deneme). Anahtar günlüğe yazılmaz.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 tanımlı değil; paket imzasız üretilecek."
+            echo "IMZALI=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          : "${ANDROID_KEYSTORE_PASSWORD:?}" "${ANDROID_KEY_ALIAS:?}" "${ANDROID_KEY_PASSWORD:?}"
+          DIR="$RUNNER_TEMP/imza"
+          mkdir -p "$DIR"
+          chmod 700 "$DIR"
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "$DIR/yayin.jks"
+          umask 077
+          {
+            echo "storeFile=$DIR/yayin.jks"
+            echo "storePassword=${ANDROID_KEYSTORE_PASSWORD}"
+            echo "keyAlias=${ANDROID_KEY_ALIAS}"
+            echo "keyPassword=${ANDROID_KEY_PASSWORD}"
+          } > src-tauri/gen/android/keystore.properties
+          echo "IMZALI=1" >> "$GITHUB_ENV"
+      - name: Paketle
+        # OAuth istemci kimlikleri derlemeye gömülür. Tanımsız ya da boşsa
+        # derleme yine geçer; Google / Microsoft düğmesi uygulama parolasına yönlendirir.
+        env:
+          MAILHERE_GOOGLE_CLIENT_ID: ${{ secrets.MAILHERE_GOOGLE_CLIENT_ID }}
+          MAILHERE_GOOGLE_CLIENT_SECRET: ${{ secrets.MAILHERE_GOOGLE_CLIENT_SECRET }}
+          MAILHERE_MICROSOFT_CLIENT_ID: ${{ secrets.MAILHERE_MICROSOFT_CLIENT_ID }}
+        run: pnpm tauri android build --apk --aab --target aarch64
+      - name: İmza anahtarını sil
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/imza" src-tauri/gen/android/keystore.properties
+      - name: Topla ve doğrula
+        run: |
+          OUT="src-tauri/gen/android/app/build/outputs"
+          APK="$(find "$OUT/apk" -name '*.apk' -ipath '*release*' | head -1)"
+          AAB="$(find "$OUT/bundle" -name '*.aab' -ipath '*release*' | head -1)"
+          test -n "$APK" && test -n "$AAB"
+          mkdir -p paketler
+          cp "$APK" "paketler/mailhere-${ETIKET}-arm64.apk"
+          cp "$AAB" "paketler/mailhere-${ETIKET}-arm64.aab"
+          scripts/apk-denetle.sh "paketler/mailhere-${ETIKET}-arm64.apk"
+          if [ "${IMZALI}" = 1 ]; then
+            "$BUILD_TOOLS/apksigner" verify --print-certs "paketler/mailhere-${ETIKET}-arm64.apk"
+            jarsigner -verify "paketler/mailhere-${ETIKET}-arm64.aab"
+          else
+            echo "Uyarı: paket imzasız; cihaza kurulamaz. ANDROID_KEYSTORE_* gizli değerlerini tanımla."
+          fi
+          (cd paketler && sha256sum -- * > SHA256SUMS)
+          cat paketler/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paketler
+          path: paketler
+          if-no-files-found: error
+          retention-days: 7
+
+  yayin:
+    name: Sürümü yayımla
+    needs: paket
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: paketler
+          path: paketler
+      - name: Sürüm notları (docs/surumler, etiket ya da commit mesajı)
+        run: |
+          TAG="${ETIKET}"
+          git fetch --force --no-tags --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}" || true
+          if [ -f "docs/surumler/${TAG}.md" ]; then
+            cp "docs/surumler/${TAG}.md" notlar.md
+          elif [ "$(git cat-file -t "${TAG}" 2>/dev/null)" = "tag" ]; then
+            git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "${TAG}" > notlar.md
+          else
+            git log -1 --format=%B > notlar.md
+          fi
+          cat notlar.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Mailhere Android ${{ env.ETIKET }}
+          tag_name: ${{ env.ETIKET }}
+          # Etiket yoksa (elle başlatma) bu commit üzerinde oluşturulur.
+          target_commitish: ${{ github.sha }}
+          body_path: notlar.md
+          draft: false
+          make_latest: true
+          files: |
+            paketler/*.apk
+            paketler/*.aab
+            paketler/SHA256SUMS

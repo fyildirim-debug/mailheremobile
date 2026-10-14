@@ -1,6 +1,6 @@
 # Mailhere Android
 
-[Mailhere](https://github.com/fyildirim-debug/mailhere) e-posta istemcisinin Android kabuğu. Çekirdek (IMAP / JMAP eşitleme, şifreli yerel depo, kurallar, gönderim) ve arayüz masaüstüyle aynı koddan gelir; bu depo yalnız Android'e özgü parçayı taşır: tek pencere, `AndroidKeyStore` destekli parola kasası, sistem bildirimi, dosya seçme / kaydetme / paylaşma ve Gradle projesi.
+[Mailhere](https://github.com/fyildirim-debug/mailhere) e-posta istemcisinin Android kabuğu. Çekirdek (IMAP / JMAP eşitleme, şifreli yerel depo, kurallar, gönderim) ve arayüz masaüstüyle aynı koddan gelir; bu depo yalnız Android'e özgü parçayı taşır: tek pencere, `AndroidKeyStore` destekli parola kasası, sistem bildirimi, dosya seçme / kaydetme / paylaşma, bilgisayardan QR ile aktarım için kamera tarayıcısı (CameraX + zxing, Play Hizmetleri yok) ve Gradle projesi.
 
 - Ortak kod `mailhere/` git alt modülüdür (sabit commit). Ortak kod orada geliştirilir; burada yalnız kabuk değişir.
 - Paket adı `com.furkanyildirim.mailhere`; Android 7.0 (API 24) ve üstü, yalnız arm64-v8a.

@@ -68,23 +68,26 @@ mailheremobile/
     src/plugin.rs           "mh-android" uygulama içi eklenti; MhPlugin.kt kaydı, run_mobile_plugin köprüsü
     src/files.rs            seçme (content:// → cache/giden/<uuid>/<ad>), kaydet (SAF), aç/paylaş; attachment_share/save
     src/notify.rs           kanal yeni-posta, bildirim, dokununca açma, notification_permission
+    src/qr.rs               qr_scan: QrScanActivity'yi açar, okunan aktarım kodunu döner
     commands.txt            yalnız Android komutları (ortak liste alt modülde)
     capabilities/main.json  platforms ["android"], tek pencere; masaüstü komutlarına izin yok
     tauri.conf.json         frontendDist ../mailhere/app/dist, identifier, minSdk 24, versionCode
     gen/android/            Gradle projesi (commit edilir)
       app/src/main/java/com/furkanyildirim/mailhere/MainActivity.kt
-      app/src/main/java/com/furkanyildirim/mailhere/plugin/{MhPlugin,SecretVault}.kt
+      app/src/main/java/com/furkanyildirim/mailhere/plugin/{MhPlugin,SecretVault,QrScanActivity}.kt
       app/src/main/AndroidManifest.xml · res/xml/{ekler_yollari,veri_cikarma_kurallari}.xml
+      res/layout/qr_tara.xml · res/drawable/{ic_geri,ic_fener,qr_uyari_zemin}.xml · res/values{,-en}/strings.xml
 ```
 
-- **Komutlar:** `mh_app::shared_commands![files::attachment_share, files::attachment_save, notify::notification_permission]`. Ortak komutların gövdesi alt modülde; kabuğa özgü iş `Platform` üzerinden gelir.
-- **Pencere:** tek `main` penceresi `index.html#/main`; yönlendirme bekçisi (`mh_app::routes::is_app_url`) uygulama dışı adresi engeller, geliştirme sunucusuna yalnız debug derlemesinde izin verir. Hızlı okuma `mh:open`, yazma `mh:navigate { route }` olayıyla aynı pencerede açılır.
+- **Komutlar:** `mh_app::shared_commands![files::attachment_share, files::attachment_save, notify::notification_permission, qr::qr_scan]`. Ortak komutların gövdesi alt modülde (QR aktarımın `transfer_begin/cancel/receive/apply` komutları dahil; telefonda şimdilik yalnız `receive` ve `apply` kullanılır, `begin/cancel` ortak listede olduğundan izinlidir); kabuğa özgü iş `Platform` üzerinden gelir.
+- **Pencere:** tek `main` penceresi `index.html#/main`; yönlendirme bekçisi (`mh_app::routes::is_app_url`) uygulama dışı adresi engeller, geliştirme sunucusuna yalnız debug derlemesinde izin verir. Hızlı okuma `mh:open`, yazma `mh:navigate { route }` (`mh_core::events::NAVIGATE`, `NavigateEvent`) olayıyla aynı pencerede açılır.
 - **Veri yolları:** veritabanı `<dataDir>/files/mailhere.db` (`app_local_data_dir` + `files`), önbellek `cacheDir`. Açılan ekler `cache/ekler/<posta>/<ad>`, seçilen ekler `cache/giden/<uuid>/<ad>`.
 - **Kasa:** `SecretVault.kt` — `AndroidKeyStore` AES-256-GCM (StrongBox varsa, yoksa TEE; kimlik doğrulama şartı yok), Keystore'un ürettiği 12 B IV, AAD = anahtar adı, `IV||şifre||etiket` Base64 ile `mailhere-kasa.xml` (MODE_PRIVATE). Veritabanı anahtarı `db-key` adıyla aynı kasada. Rust tarafı (`keystore.rs`) yalnız JSON eşler; hata metinleri değer taşımaz.
 - **Dosyalar:** seçici `tauri-plugin-dialog` (SAF), içerik `tauri-plugin-fs` ile `content://`dan okunur; açma `ACTION_VIEW`, paylaşma `ACTION_SEND`, ikisi de `FileProvider` (`<paket>.ekler`, yalnız `cache/ekler/`) ve dosya başına geçici okuma izniyle. Güvenli olmayan türler (`opens_directly` dışı) doğrudan açılmaz, paylaşım sayfasına verilir.
-- **Bildirim:** kanal `yeni-posta` (HIGH); başlık "gönderen · hesap", gövde konu; `extra.id` ile dokununca `mh:open`. Android 13+ izni `notification_permission` komutuyla istenir. Kitaplıktan gelen `RECEIVE_BOOT_COMPLETED` / `WAKE_LOCK` izinleri ve açılış alıcısı manifestte atılır.
+- **Bildirim:** kanal `yeni-posta` (HIGH); başlık "gönderen · hesap", gövde konu; `extra.id` ile dokununca `mh:open`. Android 13+ izni `notification_permission` komutuyla istenir (`granted` | `denied` | `prompt` | `promptWithRationale`; arayüz aktarım bittikten sonra çağırır). Kitaplıktan gelen `RECEIVE_BOOT_COMPLETED` / `WAKE_LOCK` izinleri ve açılış alıcısı manifestte atılır.
+- **QR tarayıcı:** `qr_scan` → Kotlin `scanQr` → tam ekran `QrScanActivity` (`exported=false`, ekran yönü serbest, koyu tema). CameraX (`camera-core/camera2/lifecycle/view` 1.5.x) arka kamera önizlemesi + `ImageAnalysis` (~720p, yalnız en son kare); her karenin Y düzlemi parlaklık dizisine alınır, önce çerçeve kılavuzundaki orta kare sensör dönüşüne göre dik çevrilip, sonra tüm kare, düz ve ters renkle `zxing core` 3.5.x ile çözülür. İkisi Apache-2.0; ML Kit ya da Google Play Hizmetleri yoktur (`apk-denetle.sh` dex'te `gms`/`mlkit` arar). Yalnız `mailhere://aktar?` ile başlayan metin kabul edilir; başka QR'da kısa uyarı gösterilir, tarama sürer; bulunca titreşimsiz kapanır. Sözleşme: `qr_scan() → string | null` (vazgeçince `null`; masaüstü geliştirme ikilisinde her zaman `null`, arayüz kodu yapıştırmaya düşer). Kamera izni çalışma anında, yalnız bu ekranda istenir; reddedilirse "Kamera izni verilmedi; Ayarlar'dan izin ver ya da kodu yapıştır." hatası, kamera açılamazsa "Kamera açılamadı…" hatası döner. Ekran metinleri `res/values/strings.xml` (Türkçe) ve `values-en` (İngilizce); renkler koyu temanın jetonları (`#0F1115` zemin, `#22252D` kart, `#E6E8ED` yazı, `#8C96F6` vurgu); yazı tipi sistem yazı tipidir (Geist yalnız web arayüzünde, alt modülde ttf yok). Üst çubuk 56 dp, düğmeler 48 dp, yazı 15 sp.
 - **Günlük:** `tracing-android` → logcat etiketi `Mailhere`; protokol kitaplıklarının ayrıntılı günlüğü ortak süzgeçle kapalıdır. `adb logcat -s Mailhere`.
-- **Manifest:** izinler yalnız `INTERNET`, `POST_NOTIFICATIONS` (bir de androidx.core'un her uygulamada tanımladığı, uygulamaya özel imza düzeyi `<paket>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`; sistem izni değildir); `allowBackup=false`, `fullBackupContent=false`, `dataExtractionRules` tümünü dışlar; açılış zemini `#ECEEF2` / gece `#0F1115`. Geliştirme paketi (`--debug`, `pnpm tauri android dev`) yalnız Vite sunucusu için `usesCleartextTraffic=true` taşır (`src/debug/AndroidManifest.xml`); sürüm paketinde yoktur.
+- **Manifest:** izinler yalnız `INTERNET`, `POST_NOTIFICATIONS`, `CAMERA` (+ `uses-feature android.hardware.camera required=false`: kamerasız cihazda kurulur, kod yapıştırılır; bir de androidx.core'un her uygulamada tanımladığı, uygulamaya özel imza düzeyi `<paket>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`; sistem izni değildir); `allowBackup=false`, `fullBackupContent=false`, `dataExtractionRules` tümünü dışlar; açılış zemini `#ECEEF2` / gece `#0F1115`. Geliştirme paketi (`--debug`, `pnpm tauri android dev`) yalnız Vite sunucusu için `usesCleartextTraffic=true` taşır (`src/debug/AndroidManifest.xml`); sürüm paketinde yoktur.
 
 ## 4. Sürüm şeması
 
@@ -106,7 +109,7 @@ keyPassword=…
 
 ## 5. CI
 
-`CI` iş akışı (push main + PR): alt modül recursive; pnpm + Node 22; kilit ve sürüm denetimi; `pnpm --filter app check/test`; Rust stable + `aarch64-linux-android`; Java 21; NDK 28.2 (yoksa sdkmanager); `cargo fmt --check`; Android clippy (`-D warnings`); bağımlılık ağacında `keyring`, `tauri-plugin-updater`, `tauri-plugin-single-instance` yok; host clippy + `cargo test`; debug APK; `scripts/apk-denetle.sh` (paket adı, izinler, minSdk 24, arm64-v8a, manifest, 16 KB hizası); APK 14 gün artifact.
+`CI` iş akışı (push main + PR): alt modül recursive; pnpm + Node 22; kilit ve sürüm denetimi; `pnpm --filter app check/test`; Rust stable + `aarch64-linux-android`; Java 21; NDK 28.2 (yoksa sdkmanager); `cargo fmt --check`; Android clippy (`-D warnings`); bağımlılık ağacında `keyring`, `tauri-plugin-updater`, `tauri-plugin-single-instance` yok; host clippy + `cargo test`; debug APK; `scripts/apk-denetle.sh` (paket adı, izinler INTERNET/POST_NOTIFICATIONS/CAMERA, kamera özelliği isteğe bağlı, minSdk 24, arm64-v8a, manifest, QrScanActivity dışa kapalı, dex'te Play Hizmetleri / ML Kit yok ve zxing var, 16 KB hizası); APK 14 gün artifact.
 
 ## 6. Cihaz denetim listesi
 
@@ -126,9 +129,12 @@ Bu ortamda cihaz/emülatör çalıştırılamadığından aşağıdakiler gerçe
 12. **Performans:** 10 bin postalı hesapta liste kaydırması akıcı; soğuk açılış < 2 s (orta sınıf cihaz).
 13. **16 KB sayfa:** Android 15+ 16 KB cihaz/emülatörde kurulup açılır (`scripts/apk-denetle.sh` hizayı doğrular).
 14. **Güncelleme:** önceki sürümün üstüne kurulum veriyi korur; `versionCode` artmış olmalı.
+15. **QR aktarım — izin:** "Bilgisayardan al" ilk kez açılınca kamera izni sorulur; reddedilince "Kamera izni verilmedi; Ayarlar'dan izin ver ya da kodu yapıştır." görünür ve kod yapıştırma yolu çalışır; "Bir daha sorma" sonrasında sistem iletişim kutusu çıkmadan aynı hata gelir. Kamerasız cihaz/emülatörde "Kamera açılamadı…" hatası ve yapıştırma yolu.
+16. **QR aktarım — tarayıcı:** koyu tam ekran, önizleme akıcı, çerçeve kılavuzu ortada, sistem çubukları saydam (çentik/geçişli ekranda üst çubuk güvenli alanda); geri düğmesi ve sistem geri tuşu `null` ile kapatır; fener düğmesi yalnız flaşlı cihazda görünür, açınca vurgu rengine döner, ekran kapanınca söner; döndürünce ekran yeniden oluşturulmaz ve okuma sürer; başka bir QR'da (ör. web adresi) "Bu bir Mailhere aktarım kodu değil" 1,8 s görünür, tarama devam eder; masaüstündeki QR ters (koyu tema) gösterilirken de okunur.
+17. **QR aktarım — uçtan uca:** bilgisayarda Ayarlar › Cihazlar › "Telefona aktar" → telefonda QR okut → özet (hesaplar, kurallar, etiketler, ayarlar) → uygula → bilgisayarda "uygulandı" durumu → telefonda bildirim izni isteği (13+) → gelen kutusu eşitlenir; parolasız hesap raporda listelenir. Aynı Wi-Fi'de değilken (hücresel veri) 30 s içinde anlaşılır ağ hatası; kodu yapıştırarak alma aynı sonucu verir; 3 dk sonra süresi dolan kod reddedilir.
 
-## 7. Bilinen sınırlar (Aşama 2)
+## 7. Bilinen sınırlar (Aşama 4d)
 
-- Mobil arayüz henüz alt modülde değil; uygulama masaüstü arayüzünü dar ekranda açar.
-- QR ile aktarım (`qr_scan`, `transfer_*`) ve kamera izni Aşama 4d'de eklenir.
+- Arayüzün `qr_scan`, `notification_permission`, `attachment_share`, `attachment_save` komutlarını sözleşmeye (`app/src/lib/api/types.ts`) ve sahte arka uca eklemesi ile "Bilgisayardan al" ekranının tarayıcıyı çağırması alt modülün Aşama 4c işidir; kabuk tarafı hazırdır.
+- Telefondan bilgisayara aktarım (telefonda `transfer_begin`) henüz arayüzde yok; komut ortak listede olduğundan izinlidir.
 - Arka plan eşitlemesi (WorkManager) Aşama 7.

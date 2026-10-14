@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -34,6 +35,11 @@ class UriArgs {
 }
 
 @InvokeArg
+class BarsArgs {
+    var dark: Boolean = false
+}
+
+@InvokeArg
 class FileArgs {
     lateinit var path: String
     var mime: String? = null
@@ -49,6 +55,7 @@ class FileArgs {
  *   `FileProvider` ile, yalnız o dosyaya özel geçici okuma izniyle açar ya da
  *   paylaşır.
  * - `scanQr`: tam ekran [QrScanActivity]; `{ text: string | null }`.
+ * - `systemBars`: durum ve gezinme çubuğu simgelerini uygulamanın temasına uydurur.
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
@@ -182,6 +189,21 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.resolve(sonuc)
             }
         }
+    }
+
+    /**
+     * Koyu temada açık, açık temada koyu simgeler. Tema dosyası yalnız
+     * telefonun gece kipini bilir; kullanıcı uygulamada başka tema seçebilir.
+     */
+    @Command
+    fun systemBars(invoke: Invoke) {
+        val args = invoke.parseArgs(BarsArgs::class.java)
+        activity.runOnUiThread {
+            val bars = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            bars.isAppearanceLightStatusBars = !args.dark
+            bars.isAppearanceLightNavigationBars = !args.dark
+        }
+        invoke.resolve()
     }
 
     private fun start(intent: Intent) {

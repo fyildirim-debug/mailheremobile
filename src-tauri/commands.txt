@@ -6,3 +6,4 @@ attachment_share
 attachment_save
 notification_permission
 qr_scan
+system_bars

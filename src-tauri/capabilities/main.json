@@ -30,6 +30,7 @@
     "allow-settings-set",
     "allow-quick-replies-set",
     "allow-sync-now",
+    "allow-sync-reconnect",
     "allow-open-main",
     "allow-open-compose",
     "allow-notify-snooze",
@@ -83,6 +84,7 @@
     "allow-attachment-share",
     "allow-attachment-save",
     "allow-notification-permission",
-    "allow-qr-scan"
+    "allow-qr-scan",
+    "allow-system-bars"
   ]
 }

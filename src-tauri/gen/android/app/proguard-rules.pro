@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Temiz oda denetimi (scripts/apk-denetle.sh): QR çözücünün zxing core olduğu
+# sürüm paketinde de görülsün. Yalnız sınıf adı korunur; kullanılmazsa silinir.
+-keepnames class com.google.zxing.qrcode.QRCodeReader

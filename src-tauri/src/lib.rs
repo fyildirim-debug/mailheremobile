@@ -7,6 +7,7 @@
 //! ile başlar. Aynı kabuk masaüstünde geliştirme için ikili olarak da açılır
 //! (`src/main.rs`); orada anahtar kasası yoktur, parolalar bellekte tutulur.
 
+pub mod bars;
 pub mod files;
 pub mod keystore;
 pub mod notify;
@@ -128,6 +129,7 @@ pub fn run() {
             files::attachment_save,
             notify::notification_permission,
             qr::qr_scan,
+            bars::system_bars,
         ])
         .run(tauri::generate_context!())
         .expect("Mailhere başlatılamadı");

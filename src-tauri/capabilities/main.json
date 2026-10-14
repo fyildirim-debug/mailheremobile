@@ -85,6 +85,8 @@
     "allow-attachment-share",
     "allow-attachment-save",
     "allow-notification-permission",
+    "allow-notification-settings",
+    "allow-notification-status",
     "allow-qr-scan",
     "allow-system-bars"
   ]

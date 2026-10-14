@@ -128,6 +128,8 @@ pub fn run() {
             files::attachment_share,
             files::attachment_save,
             notify::notification_permission,
+            notify::notification_settings,
+            notify::notification_status,
             qr::qr_scan,
             bars::system_bars,
         ])

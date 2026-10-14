@@ -4,8 +4,11 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
+import android.provider.Settings
 import androidx.activity.result.ActivityResult
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import app.tauri.annotation.ActivityCallback
@@ -42,6 +45,11 @@ class BarsArgs {
 }
 
 @InvokeArg
+class ChannelArgs {
+    lateinit var channel: String
+}
+
+@InvokeArg
 class FileArgs {
     lateinit var path: String
     var mime: String? = null
@@ -58,6 +66,9 @@ class FileArgs {
  *   paylaşır.
  * - `scanQr`: tam ekran [QrScanActivity]; `{ text: string | null }`.
  * - `systemBars`: durum ve gezinme çubuğu simgelerini uygulamanın temasına uydurur.
+ * - `notificationsEnabled`: uygulamanın ve posta kanalının bildirimleri açık mı
+ *   (izin verilmiş olsa da kullanıcı sistem ayarlarından kapatmış olabilir).
+ * - `openNotificationSettings`: Mailhere'nin sistem bildirim ayarları.
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
@@ -226,6 +237,36 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
             bars.isAppearanceLightNavigationBars = !args.dark
         }
         invoke.resolve()
+    }
+
+    @Command
+    fun notificationsEnabled(invoke: Invoke) {
+        val args = invoke.parseArgs(ChannelArgs::class.java)
+        val manager = NotificationManagerCompat.from(activity)
+        // Kanal henüz yoksa (ilk açılış) uygulama düzeyindeki durum geçerlidir.
+        val channelOff = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            manager.getNotificationChannel(args.channel)?.importance ==
+            NotificationManagerCompat.IMPORTANCE_NONE
+        val result = JSObject()
+        result.put("enabled", manager.areNotificationsEnabled() && !channelOff)
+        invoke.resolve(result)
+    }
+
+    @Command
+    fun openNotificationSettings(invoke: Invoke) {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.fromParts("package", activity.packageName, null))
+        }
+        try {
+            start(intent)
+            invoke.resolve()
+        } catch (e: ActivityNotFoundException) {
+            invoke.reject("Bildirim ayarları açılamadı")
+        }
     }
 
     private fun start(intent: Intent) {

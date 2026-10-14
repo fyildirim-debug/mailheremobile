@@ -5,5 +5,7 @@
 attachment_share
 attachment_save
 notification_permission
+notification_settings
+notification_status
 qr_scan
 system_bars

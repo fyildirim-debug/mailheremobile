@@ -3,6 +3,7 @@
 //! ibarettir; gövde ve ek adı taşınmaz.
 
 use mh_core::{AppError, NotifyEvent};
+use tauri::plugin::PermissionState;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -76,33 +77,128 @@ pub fn show(app: &AppHandle, ev: &NotifyEvent) {
     }
 }
 
-/// Android 13+ bildirim iznini ister (daha önce karar verildiyse sormaz);
-/// sonuç: `granted` | `denied` | `prompt` | `promptWithRationale`.
-#[tauri::command]
-pub async fn notification_permission(app: AppHandle) -> Res<String> {
-    use tauri::plugin::PermissionState;
-    let state = tokio::task::spawn_blocking(move || app.notification().request_permission())
-        .await
-        .map_err(mh_app::state::internal)?
-        .map_err(|e| {
-            tracing::warn!(error = %e, "bildirim izni istenemedi");
-            AppError::new(
-                mh_core::ErrorCode::Internal,
-                "Bildirim izni istenemedi. Sistem ayarlarından Mailhere bildirimlerini açabilirsin.",
-            )
-        })?;
-    Ok(match state {
+/// İzin durumu kullanıcı ayarıyla birleşir: izin verilmiş olsa da uygulama ya
+/// da posta kanalı sistem ayarlarından kapatıldıysa bildirim çıkmaz;
+/// arayüz bunu da "denied" (ayarları aç) diye görür.
+fn effective(state: PermissionState, enabled: bool) -> PermissionState {
+    match state {
+        PermissionState::Granted if !enabled => PermissionState::Denied,
+        other => other,
+    }
+}
+
+fn label(state: PermissionState) -> String {
+    match state {
         PermissionState::Granted => "granted",
         PermissionState::Denied => "denied",
         PermissionState::Prompt => "prompt",
         PermissionState::PromptWithRationale => "promptWithRationale",
     }
-    .to_owned())
+    .to_owned()
+}
+
+/// Uygulama ve posta kanalı bildirimleri açık mı. Android dışında ya da
+/// eklenti yanıt vermezse açık sayılır (yalnız gösterge içindir).
+fn enabled(app: &AppHandle) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Enabled {
+        enabled: bool,
+    }
+    if !cfg!(target_os = "android") {
+        return true;
+    }
+    match crate::plugin::call::<Enabled>(
+        app,
+        "notificationsEnabled",
+        serde_json::json!({ "channel": CHANNEL }),
+    ) {
+        Ok(e) => e.enabled,
+        Err(e) => {
+            tracing::warn!(error = %e, "bildirim ayarı okunamadı");
+            true
+        }
+    }
+}
+
+fn permission_error(e: tauri_plugin_notification::Error) -> AppError {
+    tracing::warn!(error = %e, "bildirim izni okunamadı");
+    AppError::new(
+        mh_core::ErrorCode::Internal,
+        "Bildirim izni okunamadı. Sistem ayarlarından Mailhere bildirimlerini açabilirsin.",
+    )
+}
+
+/// Bildirim izninin durumu; kullanıcıya sorulmaz. Sonuç: `granted` |
+/// `denied` | `prompt` | `promptWithRationale`.
+#[tauri::command]
+pub async fn notification_status(app: AppHandle) -> Res<String> {
+    let state = tokio::task::spawn_blocking(move || {
+        let state = app.notification().permission_state()?;
+        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled(&app)))
+    })
+    .await
+    .map_err(mh_app::state::internal)?
+    .map_err(permission_error)?;
+    Ok(label(state))
+}
+
+/// Android 13+ bildirim iznini ister (daha önce karar verildiyse sormaz);
+/// sonuç `notification_status` ile aynı biçimde.
+#[tauri::command]
+pub async fn notification_permission(app: AppHandle) -> Res<String> {
+    let state = tokio::task::spawn_blocking(move || {
+        let n = app.notification();
+        // İzin zaten verilmişse istek gönderilmez: eklenti o durumda yanıt
+        // vermez ve çağrı sonsuza dek beklerdi.
+        let state = match n.permission_state()? {
+            PermissionState::Granted => PermissionState::Granted,
+            _ => n.request_permission()?,
+        };
+        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled(&app)))
+    })
+    .await
+    .map_err(mh_app::state::internal)?
+    .map_err(permission_error)?;
+    Ok(label(state))
+}
+
+/// Mailhere'nin sistem bildirim ayarlarını açar (kalıcı retten sonra izin
+/// yalnız oradan verilir). Android dışında bir şey yapmaz.
+#[tauri::command]
+pub async fn notification_settings(app: AppHandle) -> Res<()> {
+    if !cfg!(target_os = "android") {
+        return Ok(());
+    }
+    tokio::task::spawn_blocking(move || {
+        crate::plugin::call::<serde_json::Value>(&app, "openNotificationSettings", ())
+    })
+    .await
+    .map_err(mh_app::state::internal)?
+    .map_err(|e| {
+        tracing::warn!(error = %e, "bildirim ayarları açılamadı");
+        AppError::new(
+            mh_core::ErrorCode::Internal,
+            "Bildirim ayarları açılamadı. Telefonun Ayarlar › Uygulamalar › Mailhere bölümünden açabilirsin.",
+        )
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kapali_kanal_izni_reddedilmis_gosterir() {
+        assert_eq!(label(effective(PermissionState::Granted, true)), "granted");
+        assert_eq!(label(effective(PermissionState::Granted, false)), "denied");
+        assert_eq!(label(effective(PermissionState::Prompt, false)), "prompt");
+        assert_eq!(
+            label(effective(PermissionState::PromptWithRationale, true)),
+            "promptWithRationale"
+        );
+        assert_eq!(label(effective(PermissionState::Denied, true)), "denied");
+    }
 
     #[test]
     fn bildirim_metni_gonderen_ve_konu() {

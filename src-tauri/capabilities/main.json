@@ -31,6 +31,7 @@
     "allow-quick-replies-set",
     "allow-sync-now",
     "allow-sync-reconnect",
+    "allow-remote-images",
     "allow-open-main",
     "allow-open-compose",
     "allow-notify-snooze",

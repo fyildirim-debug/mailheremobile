@@ -2556,6 +2556,7 @@ dependencies = [
 name = "mh-app"
 version = "0.3.1"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "mh-core",
  "mh-jmap",
@@ -2566,6 +2567,7 @@ dependencies = [
  "mh-store",
  "mh-sync",
  "mh-transfer",
+ "reqwest 0.12.28",
  "rustls",
  "serde",
  "serde_json",

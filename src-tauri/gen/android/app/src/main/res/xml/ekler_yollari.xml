@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider yalnız önbelleğin ekler/ klasörünü paylaşır (açılan ekler, davet dosyası). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="ekler" path="ekler/" />
+</paths>

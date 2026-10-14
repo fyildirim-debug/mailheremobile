@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Yalnız ağ ve (Android 13+) bildirim izni. Bildirim eklentisinin
+         kitaplık bildiriminden gelen açılışta çalışma ve uyanık tutma izinleri
+         kullanılmaz; birleştirmede atılır. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
+
+    <!-- Veri (şifreli veritabanı, anahtar kasası, önbellek) bulut yedeğine ve
+         cihazlar arası aktarıma girmez. Açık metin (http) trafiği yok; yalnız
+         geliştirme sürümü dev sunucusu için src/debug bildiriminde açılır. -->
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Mailhere"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/veri_cikarma_kurallari"
+        tools:targetApi="s">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Açılan ve paylaşılan ekler: yalnız önbelleğin ekler/ klasörü,
+             dosya başına geçici okuma izniyle (MhPlugin.kt). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.ekler"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/ekler_yollari" />
+        </provider>
+
+        <!-- Zamanlanmış bildirim kullanılmaz; açılışta geri yükleme alıcısı gereksiz. -->
+        <receiver android:name="app.tauri.notification.LocalNotificationRestoreReceiver" tools:node="remove" />
+    </application>
+</manifest>

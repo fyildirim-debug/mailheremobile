@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yalnız geliştirme sürümü: `pnpm tauri android dev` arayüzü bilgisayardaki
+     Vite sunucusundan (http://<ip>:5173) yükler. Sürüm paketinde bu öznitelik yoktur. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application android:usesCleartextTraffic="true" tools:node="merge" />
+</manifest>

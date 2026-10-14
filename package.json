@@ -1,0 +1,23 @@
+{
+  "name": "mailheremobile",
+  "private": true,
+  "version": "0.3.1",
+  "description": "Mailhere Android kabuğu",
+  "license": "MIT",
+  "author": "Furkan YILDIRIM <posta@furkanyildirim.com>",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "build": "pnpm --filter app build",
+    "check": "pnpm --filter app check",
+    "test": "pnpm --filter app test",
+    "tauri": "tauri",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk --target aarch64",
+    "android:debug": "tauri android build --apk --target aarch64 --debug",
+    "kilit-denetle": "node scripts/kilit-denetle.mjs",
+    "surum-denetle": "node scripts/surum-denetle.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.2"
+  }
+}

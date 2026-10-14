@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri"]
+# Ortak çekirdek (`mailhere/`) kendi çalışma alanıdır; yol bağımlılığı olarak
+# bağlanır, bu çalışma alanına üye olmaz. Kilit dosyası ayrıdır; ortak paket
+# sürümleri `scripts/kilit-denetle.mjs` ile mailhere'nin kilidiyle eşlenir.
+exclude = ["mailhere"]
+
+[workspace.package]
+# Sürüm `mailhere` ile birlikte yürür (tauri.conf.json ve package.json aynı).
+version = "0.3.1"
+edition = "2021"
+license = "MIT"
+authors = ["Furkan YILDIRIM <posta@furkanyildirim.com>"]
+repository = "https://github.com/fyildirim-debug/mailheremobile"
+# Tauri 2.12 en az 1.90 ister.
+rust-version = "1.90"
+
+[profile.dev]
+# Yalnız satır bilgisi: derleme klasörü küçük, geri izleme okunur kalır.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+# Telefonda hız öncelikli; tek kodgen birimi ve LTO ile .so küçülür.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,5 @@
+packages:
+  # Arayüz alt modülden gelir; mailhere/app paket adı `app`.
+  - mailhere/app
+onlyBuiltDependencies:
+  - esbuild

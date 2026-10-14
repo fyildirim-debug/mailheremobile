@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "main",
-  "description": "Tek pencere (Android): tüm uygulama komutları, dış bağlantı, sistem bildirimi.",
+  "description": "Tek pencere (Android): tüm uygulama komutları (QR aktarım dahil), dış bağlantı, sistem bildirimi.",
   "platforms": ["android"],
   "windows": ["main"],
   "permissions": [
@@ -76,6 +76,10 @@
     "allow-tag-save",
     "allow-tag-delete",
     "allow-messages-tag",
+    "allow-transfer-begin",
+    "allow-transfer-cancel",
+    "allow-transfer-receive",
+    "allow-transfer-apply",
     "allow-attachment-share",
     "allow-attachment-save",
     "allow-notification-permission"

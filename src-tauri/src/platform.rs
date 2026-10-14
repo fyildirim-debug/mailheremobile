@@ -8,22 +8,11 @@ use mh_app::routes::compose_route;
 use mh_app::state::internal;
 use mh_app::{BoxFut, Confirm, Platform};
 use mh_core::{
-    events, AppError, AppResult, ComposePrefill, MessageId, NotifyEvent, OpenEvent, Settings,
+    events, AppError, AppResult, ComposePrefill, MessageId, NavigateEvent, NotifyEvent, OpenEvent,
+    Settings,
 };
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-
-/// `NavigateEvent`: ana pencere bu rotayı yığına itmeli (Android'de ayrı
-/// yazma penceresi yoktur).
-pub const NAVIGATE: &str = "mh:navigate";
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct NavigateEvent {
-    /// `index.html#/<route>` biçimindeki rota (ör. `compose/reply/7`).
-    pub route: String,
-}
 
 pub struct AndroidPlatform;
 
@@ -51,9 +40,11 @@ impl Platform for AndroidPlatform {
         Ok(())
     }
 
+    /// Ayrı yazma penceresi yoktur: ana pencere `mh:navigate` olayıyla rotayı
+    /// yığına iter (`mh_core::events::NAVIGATE`, `NavigateEvent`).
     fn open_compose(&self, app: &AppHandle, prefill: &ComposePrefill) -> AppResult<()> {
         let route = compose_route(prefill);
-        app.emit_to(crate::MAIN, NAVIGATE, NavigateEvent { route })
+        app.emit_to(crate::MAIN, events::NAVIGATE, NavigateEvent { route })
             .map_err(internal)
     }
 
@@ -138,6 +129,6 @@ mod tests {
             serde_json::to_value(&ev).unwrap(),
             serde_json::json!({ "route": "compose/reply/7" })
         );
-        assert_eq!(NAVIGATE, "mh:navigate");
+        assert_eq!(events::NAVIGATE, "mh:navigate");
     }
 }

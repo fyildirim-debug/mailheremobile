@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use mh_app::commands::{private_dir, sanitize_filename, write_private};
+use mh_app::commands::{ensure_body, private_dir, sanitize_filename, write_private};
 use mh_app::state::internal;
 use mh_app::AppState;
 use mh_core::{AppError, AppResult, ErrorCode, MessageId};
@@ -268,25 +268,8 @@ fn write_picked(
     }
 }
 
-/// Gövde yerelde yoksa sunucudan indirir (`mh_app::commands::ensure_body`
-/// ile aynı; o işlev crate dışına açık değil).
-async fn ensure_body(state: &AppState, id: MessageId) -> AppResult<()> {
-    let loc = state.store.location(id)?.ok_or_else(|| {
-        AppError::new(
-            ErrorCode::NotFound,
-            "Posta bulunamadı; silinmiş ya da taşınmış olabilir.",
-        )
-    })?;
-    if loc.has_raw {
-        return Ok(());
-    }
-    if mh_app::cmd_jmap::is_jmap_account(state, &loc.account_id)? {
-        return state.jmap.fetch_body(id).await;
-    }
-    state.sync.fetch_body(id).await
-}
-
-/// Postanın `index` numaralı eki (ad, tür, içerik).
+/// Postanın `index` numaralı eki (ad, tür, içerik); gövde yerelde yoksa
+/// ortak katman indirir.
 async fn attachment_data(
     state: &AppState,
     id: MessageId,

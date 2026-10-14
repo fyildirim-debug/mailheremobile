@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- QR tarayıcı: koyu tam ekran kamera önizlemesi, ortada çerçeve kılavuzu,
+     üstte geri / yönerge / fener, altta kısa uyarı. Ölçüler TASARIM §12:
+     çubuk 56, dokunma hedefi 48, yazı 15, köşe 10. Güvenli alan boşlukları
+     QrScanActivity'de pencere kenarlarından verilir. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/kok"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/qr_zemin">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/onizleme"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
+    <com.furkanyildirim.mailhere.plugin.QrCerceveView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:id="@+id/ust_cubuk"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/geri"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/qr_back"
+            android:src="@drawable/ic_geri"
+            android:tint="@color/qr_murekkep" />
+
+        <TextView
+            android:id="@+id/baslik"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/qr_title"
+            android:textColor="@color/qr_murekkep"
+            android:textSize="15sp" />
+
+        <ImageButton
+            android:id="@+id/fener"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/qr_torch_on"
+            android:src="@drawable/ic_fener"
+            android:tint="@color/qr_murekkep"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/uyari"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/qr_uyari_zemin"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:textColor="@color/qr_murekkep"
+        android:textSize="15sp"
+        android:visibility="gone" />
+</FrameLayout>

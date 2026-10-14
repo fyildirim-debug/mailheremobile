@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El feneri: gövde, baş bandı ve düğme (24 ızgara, 1.6 çizgi). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M7.5 3.5h9v3.4L14.5 10v9.5a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V10L7.5 6.9zM7.5 6.9h9M12 12v2.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -2,4 +2,11 @@
 <resources>
     <!-- Açılış zemini: arayüzün ground jetonuyla aynı (beyaz parlama yok). -->
     <color name="zemin">#ECEEF2</color>
+    <!-- QR tarayıcı her temada koyudur: koyu temanın ground / raised / ink /
+         accent jetonları (app/src/styles/tokens.css); örtü ground'un %60'ı. -->
+    <color name="qr_zemin">#0F1115</color>
+    <color name="qr_yuzey">#22252D</color>
+    <color name="qr_murekkep">#E6E8ED</color>
+    <color name="qr_vurgu">#8C96F6</color>
+    <color name="qr_ortu">#990F1115</color>
 </resources>

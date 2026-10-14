@@ -82,6 +82,7 @@
     "allow-transfer-apply",
     "allow-attachment-share",
     "allow-attachment-save",
-    "allow-notification-permission"
+    "allow-notification-permission",
+    "allow-qr-scan"
   ]
 }

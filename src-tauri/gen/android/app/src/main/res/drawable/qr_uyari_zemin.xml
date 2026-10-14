@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Uyarı kartı zemini: raised jetonu, köşe 10 (gölge yok; kenar/gölge tek derinlik). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/qr_yuzey" />
+    <corners android:radius="10dp" />
+</shape>

@@ -1,6 +1,7 @@
 //! Mailhere Android kabuğu: tek pencere, Android anahtar kasası köprüsü,
-//! sistem bildirimi, dosya seçme / kaydetme / paylaşma. Komutlar ve çekirdek
-//! ortak katmanda (`mh-app`, alt modül `mailhere/`).
+//! sistem bildirimi, dosya seçme / kaydetme / paylaşma, QR tarayıcı
+//! (bilgisayardan aktarım). Komutlar ve çekirdek ortak katmanda (`mh-app`,
+//! alt modül `mailhere/`).
 //!
 //! Gradle `libmailhere_lib.so`yu yükler ve [`run`] `tauri::mobile_entry_point`
 //! ile başlar. Aynı kabuk masaüstünde geliştirme için ikili olarak da açılır
@@ -11,6 +12,7 @@ pub mod keystore;
 pub mod notify;
 pub mod platform;
 pub mod plugin;
+pub mod qr;
 
 use std::sync::Arc;
 
@@ -125,6 +127,7 @@ pub fn run() {
             files::attachment_share,
             files::attachment_save,
             notify::notification_permission,
+            qr::qr_scan,
         ])
         .run(tauri::generate_context!())
         .expect("Mailhere başlatılamadı");

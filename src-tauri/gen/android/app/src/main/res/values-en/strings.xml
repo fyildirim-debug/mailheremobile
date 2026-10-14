@@ -1,0 +1,8 @@
+<resources>
+    <!-- QR tarayıcı (QrScanActivity), İngilizce. Uygulama adı çevrilmez. -->
+    <string name="qr_title">Point the frame at the QR on your computer</string>
+    <string name="qr_back">Back</string>
+    <string name="qr_torch_on">Turn on flashlight</string>
+    <string name="qr_torch_off">Turn off flashlight</string>
+    <string name="qr_wrong">This isn\'t a Mailhere transfer code</string>
+</resources>

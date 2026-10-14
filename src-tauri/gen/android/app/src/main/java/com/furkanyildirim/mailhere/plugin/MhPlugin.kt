@@ -5,7 +5,9 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -46,6 +48,7 @@ class FileArgs {
  * - `openFile` / `shareFile`: önbellekteki (`cache/ekler/`) bir dosyayı
  *   `FileProvider` ile, yalnız o dosyaya özel geçici okuma izniyle açar ya da
  *   paylaşır.
+ * - `scanQr`: tam ekran [QrScanActivity]; `{ text: string | null }`.
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
@@ -143,6 +146,44 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Tam ekran QR tarayıcıyı açar; sonuç [qrSonuc] ile `{ text: string | null }`
+     * olarak döner (vazgeçince `null`). Kamera izni verilmediyse `kamera-izni`,
+     * kamera açılamadıysa `kamera` iletisiyle reddedilir; Rust tarafı
+     * (`src/qr.rs`) kullanıcı metnine çevirir.
+     */
+    @Command
+    fun scanQr(invoke: Invoke) {
+        // Etkinlik başlatma ana iş parçacığında; çağrı Rust'tan başka bir iş parçacığıyla gelir.
+        activity.runOnUiThread {
+            try {
+                startActivityForResult(invoke, Intent(activity, QrScanActivity::class.java), "qrSonuc")
+            } catch (e: Exception) {
+                invoke.reject(HATA_KAMERA)
+            }
+        }
+    }
+
+    @ActivityCallback
+    fun qrSonuc(invoke: Invoke, result: ActivityResult) {
+        val veri = result.data
+        val sonuc = JSObject()
+        if (result.resultCode == Activity.RESULT_OK) {
+            val metin = veri?.getStringExtra(QrScanActivity.EXTRA_METIN)
+            sonuc.put("text", if (metin.isNullOrEmpty()) JSONObject.NULL else metin)
+            invoke.resolve(sonuc)
+            return
+        }
+        when (veri?.getStringExtra(QrScanActivity.EXTRA_HATA)) {
+            QrScanActivity.HATA_IZIN -> invoke.reject(HATA_IZIN)
+            QrScanActivity.HATA_KAMERA -> invoke.reject(HATA_KAMERA)
+            else -> {
+                sonuc.put("text", JSONObject.NULL)
+                invoke.resolve(sonuc)
+            }
+        }
+    }
+
     private fun start(intent: Intent) {
         activity.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
@@ -165,5 +206,9 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         const val EKLER = "ekler"
+
+        /** `scanQr` ret iletileri (`src/qr.rs` ile aynı). */
+        const val HATA_IZIN = "kamera-izni"
+        const val HATA_KAMERA = "kamera"
     }
 }

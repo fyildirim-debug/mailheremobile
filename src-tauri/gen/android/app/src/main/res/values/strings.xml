@@ -1,4 +1,11 @@
 <resources>
     <string name="app_name">Mailhere</string>
     <string name="main_activity_title">Mailhere</string>
+
+    <!-- QR tarayıcı (QrScanActivity); İngilizcesi values-en/strings.xml. -->
+    <string name="qr_title">Bilgisayardaki QR\'ı çerçeveye getir</string>
+    <string name="qr_back">Geri</string>
+    <string name="qr_torch_on">Feneri aç</string>
+    <string name="qr_torch_off">Feneri kapat</string>
+    <string name="qr_wrong">Bu bir Mailhere aktarım kodu değil</string>
 </resources>

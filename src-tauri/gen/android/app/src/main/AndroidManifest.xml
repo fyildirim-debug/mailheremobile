@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Yalnız ağ ve (Android 13+) bildirim izni. Bildirim eklentisinin
-         kitaplık bildiriminden gelen açılışta çalışma ve uyanık tutma izinleri
-         kullanılmaz; birleştirmede atılır. -->
+    <!-- Ağ, (Android 13+) bildirim ve yalnız QR tarayıcı için kamera izni;
+         kamera izni çalışma anında, tarama ekranında istenir. Bildirim
+         eklentisinin kitaplık bildiriminden gelen açılışta çalışma ve uyanık
+         tutma izinleri kullanılmaz; birleştirmede atılır. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Kamerasız cihazda da kurulur: aktarım kodu yapıştırılabilir. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
 
@@ -32,6 +36,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- QR tarayıcı (bilgisayardan aktarım): yalnız MhPlugin.scanQr açar,
+             ekran yönü serbest, tam ekran koyu tema; döndürmede yeniden
+             oluşturulmaz (CameraX görüntüyü kendisi çevirir). -->
+        <activity
+            android:name=".plugin.QrScanActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:theme="@style/Theme.Mailhere.QrTara" />
 
         <!-- Açılan ve paylaşılan ekler: yalnız önbelleğin ekler/ klasörü,
              dosya başına geçici okuma izniyle (MhPlugin.kt). -->

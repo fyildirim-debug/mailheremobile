@@ -8,4 +8,14 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
     </style>
+
+    <!-- QR tarayıcı: her temada koyu, tam ekran; sistem çubukları etkinlikte
+         saydam yapılır (enableEdgeToEdge). Tek tanım yeter; gece dosyası
+         yalnız Theme.Mailhere'yi değiştirir. -->
+    <style name="Theme.Mailhere.QrTara" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@color/qr_zemin</item>
+        <item name="android:colorBackground">@color/qr_zemin</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+    </style>
 </resources>

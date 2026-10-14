@@ -17,6 +17,8 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @InvokeArg
 class KeyArgs {
@@ -61,38 +63,58 @@ class FileArgs {
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
     private val vault by lazy { SecretVault(activity) }
 
+    /**
+     * Kasa işleri (donanım kasasında AES-GCM, `SharedPreferences.commit()`)
+     * eklenti komutlarının geldiği ana iş parçacığını tutmasın: her IMAP
+     * bağlantısı bir okuma yapar, açılışta ve yeniden bağlanmada arayüz
+     * takılırdı. Tek iş parçacığı sırayı korur.
+     */
+    private val kasaIsi: ExecutorService = Executors.newSingleThreadExecutor()
+
     @Command
     fun secretGet(invoke: Invoke) {
         val args = invoke.parseArgs(KeyArgs::class.java)
-        try {
-            val value = vault.get(args.key)
-            val result = JSObject()
-            result.put("value", value ?: JSONObject.NULL)
-            invoke.resolve(result)
-        } catch (e: VaultException) {
-            invoke.reject(e.message ?: "kasa okunamadı")
+        kasaIsi.execute {
+            try {
+                val value = vault.get(args.key)
+                val result = JSObject()
+                result.put("value", value ?: JSONObject.NULL)
+                invoke.resolve(result)
+            } catch (e: VaultException) {
+                invoke.reject(e.message ?: "kasa okunamadı")
+            } catch (e: Exception) {
+                invoke.reject("kasa okunamadı")
+            }
         }
     }
 
     @Command
     fun secretSet(invoke: Invoke) {
         val args = invoke.parseArgs(SetArgs::class.java)
-        try {
-            vault.set(args.key, args.value)
-            invoke.resolve()
-        } catch (e: VaultException) {
-            invoke.reject(e.message ?: "kasaya yazılamadı")
+        kasaIsi.execute {
+            try {
+                vault.set(args.key, args.value)
+                invoke.resolve()
+            } catch (e: VaultException) {
+                invoke.reject(e.message ?: "kasaya yazılamadı")
+            } catch (e: Exception) {
+                invoke.reject("kasaya yazılamadı")
+            }
         }
     }
 
     @Command
     fun secretDelete(invoke: Invoke) {
         val args = invoke.parseArgs(KeyArgs::class.java)
-        try {
-            vault.delete(args.key)
-            invoke.resolve()
-        } catch (e: VaultException) {
-            invoke.reject(e.message ?: "kasadan silinemedi")
+        kasaIsi.execute {
+            try {
+                vault.delete(args.key)
+                invoke.resolve()
+            } catch (e: VaultException) {
+                invoke.reject(e.message ?: "kasadan silinemedi")
+            } catch (e: Exception) {
+                invoke.reject("kasadan silinemedi")
+            }
         }
     }
 

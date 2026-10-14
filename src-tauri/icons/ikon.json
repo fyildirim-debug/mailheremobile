@@ -1,0 +1,6 @@
+{
+  "default": "../../mailhere/src-tauri/icons/app-icon.svg",
+  "bg_color": "#4655D4",
+  "android_fg": "android-on.svg",
+  "android_fg_scale": 100
+}

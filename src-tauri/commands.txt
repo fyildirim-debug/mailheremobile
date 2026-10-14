@@ -1,0 +1,7 @@
+# Yalnız Android kabuğunun komutları (ortak liste: mailhere/crates/mh-app/commands.txt).
+# build.rs ikisini birleştirir; src/lib.rs'teki birim testi bu adların
+# shared_commands! çağrısına eklendiğini ve capabilities/main.json'da izinli
+# olduğunu denetler. QR tarama ve aktarım komutları Aşama 4d'de eklenir.
+attachment_share
+attachment_save
+notification_permission

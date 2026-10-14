@@ -74,8 +74,9 @@ jobs:
       - name: Kilit tutarlı mı?
         run: cargo metadata --locked --format-version 1 > /dev/null
       - name: İmza anahtarı
-        # Gizli değerler tanımlıysa keystore.properties yazılır; değilse paket
-        # imzasız üretilir (yalnız deneme). Anahtar günlüğe yazılmaz.
+        # Gizli değerlerden keystore.properties yazılır; anahtar günlüğe
+        # yazılmaz. Gizli değer yoksa sürüm durur: imzasız APK telefona
+        # kurulamaz, yayımlanmamalı.
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -83,9 +84,8 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
-            echo "ANDROID_KEYSTORE_BASE64 tanımlı değil; paket imzasız üretilecek."
-            echo "IMZALI=0" >> "$GITHUB_ENV"
-            exit 0
+            echo "::error::İmza anahtarı yok: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS ve ANDROID_KEY_PASSWORD gizli değerlerini Settings › Secrets and variables › Actions altında tanımla, sonra sürümü yeniden başlat."
+            exit 1
           fi
           : "${ANDROID_KEYSTORE_PASSWORD:?}" "${ANDROID_KEY_ALIAS:?}" "${ANDROID_KEY_PASSWORD:?}"
           DIR="$RUNNER_TEMP/imza"
@@ -99,7 +99,6 @@ jobs:
             echo "keyAlias=${ANDROID_KEY_ALIAS}"
             echo "keyPassword=${ANDROID_KEY_PASSWORD}"
           } > src-tauri/gen/android/keystore.properties
-          echo "IMZALI=1" >> "$GITHUB_ENV"
       - name: Paketle
         # OAuth istemci kimlikleri derlemeye gömülür. Tanımsız ya da boşsa
         # derleme yine geçer; Google / Microsoft düğmesi uygulama parolasına yönlendirir.
@@ -121,12 +120,8 @@ jobs:
           cp "$APK" "paketler/mailhere-${ETIKET}-arm64.apk"
           cp "$AAB" "paketler/mailhere-${ETIKET}-arm64.aab"
           scripts/apk-denetle.sh "paketler/mailhere-${ETIKET}-arm64.apk"
-          if [ "${IMZALI}" = 1 ]; then
-            "$BUILD_TOOLS/apksigner" verify --print-certs "paketler/mailhere-${ETIKET}-arm64.apk"
-            jarsigner -verify "paketler/mailhere-${ETIKET}-arm64.aab"
-          else
-            echo "Uyarı: paket imzasız; cihaza kurulamaz. ANDROID_KEYSTORE_* gizli değerlerini tanımla."
-          fi
+          "$BUILD_TOOLS/apksigner" verify --print-certs "paketler/mailhere-${ETIKET}-arm64.apk"
+          jarsigner -verify "paketler/mailhere-${ETIKET}-arm64.aab"
           (cd paketler && sha256sum -- * > SHA256SUMS)
           cat paketler/SHA256SUMS
       - uses: actions/upload-artifact@v4

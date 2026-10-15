@@ -69,6 +69,17 @@ echo "$QR" | grep -q 'android:exported.*=false' || sorun "QrScanActivity exporte
 blok() {
   echo "$MANIFEST" | awk -v ad="$1" '/^ *E: / { if (b ~ ad) print b; b = "" } { b = b "\n" $0 } END { if (b ~ ad) print b }'
 }
+# Bir öğenin alt ağacı: öğeden sonra, aynı ya da daha az girintili bir sonraki
+# E: satırına kadar (niyet süzgeçleri ve eylemleri de kapsar).
+agac() {
+  echo "$MANIFEST" | awk -v ad="$1" '
+    /^ *E: / { g = match($0, /E:/) }
+    acik && /^ *E: / && g <= derin { acik = 0 }
+    acik { print; next }
+    /^ *E: / { aday = $0; adayg = g; next }
+    aday != "" && $0 ~ ad { print aday; print; acik = 1; derin = adayg; aday = "" }
+  '
+}
 # Bildirim düğmeleri alıcısı ve anlık bildirim hizmeti dışa kapalı; hizmet
 # specialUse türünde (alt tür beyanıyla) ve görev kapanınca durmaz (çekirdek
 # etkinliksiz yaşar).
@@ -85,7 +96,7 @@ echo "$MANIFEST" | grep -q 'PROPERTY_SPECIAL_USE_FGS_SUBTYPE' || sorun "specialU
 # Uygulama sınıfı (JNI köprüsünü kurar), açılış alıcısı (yalnız sistem
 # yayınları), yoklama işi (yalnız sistem bağlanır) ve ayrı süreçteki trampolin.
 echo "$MANIFEST" | grep -q 'com.furkanyildirim.mailhere.MailhereApp' || sorun "MailhereApp uygulama sınıfı manifestte yok"
-BOOT="$(blok 'plugin.BootAlici')"
+BOOT="$(agac 'plugin.BootAlici')"
 [ -n "$BOOT" ] || sorun "BootAlici manifestte yok"
 echo "$BOOT" | grep -q 'android:exported.*=true' || sorun "BootAlici exported=true değil (sistem yayını alamaz)"
 echo "$BOOT" | grep -q 'android.intent.action.BOOT_COMPLETED' || sorun "BootAlici BOOT_COMPLETED süzgeci yok"

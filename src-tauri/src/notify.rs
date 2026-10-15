@@ -424,6 +424,7 @@ pub(crate) mod tests {
             message: ozet(id, account, &format!("Konu {id}"), "", date),
             account_name: name.into(),
             account_color: "#4655D4".into(),
+            otp: None,
         }
     }
 
@@ -451,6 +452,7 @@ pub(crate) mod tests {
             ),
             account_name: "İş".into(),
             account_color: "#000".into(),
+            otp: None,
         };
         let k = kart(&ev);
         assert_eq!(k.id, 7);

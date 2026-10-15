@@ -5,21 +5,24 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.app.RemoteInput
-import app.tauri.plugin.JSObject
 import com.furkanyildirim.mailhere.R
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Bildirim düğmeleri (Okundu, Arşivle, Yanıtla, Geri al), kaydırıp kapatma,
- * anlık bildirimin "Kapat" düğmesi ve uyanma alarmı. Dışa kapalıdır
- * (`exported=false`); niyetler yalnız bu uygulamanın bildirimlerinden gelir.
+ * Bildirim düğmeleri (Yanıtla, Okundu, Arşivle, Sil, İstenmeyen, Geri al),
+ * kaydırıp kapatma, anlık bildirimin "Kapat" düğmesi ve uyanma alarmı. Dışa
+ * kapalıdır (`exported=false`); niyetler yalnız bu uygulamanın
+ * bildirimlerinden gelir.
  *
- * Süreç ve Rust çekirdeği çalışıyorsa eylem [MhPlugin.ilet] ile çekirdeğe
- * gider (`src/eylem.rs`); uygulama ekranı açılmaz. Süreç ölmüşse çekirdek
- * buradan başlatılamaz (Rust çalışma ortamı yalnız etkinlikle açılır): eylem
+ * Eylem [ArkaKopru.eylemGonder] ile Rust'a gider (`src/eylem.rs`); süreçte
+ * hangi çekirdek açıksa (pencereli ya da etkinliksiz) o uygular, uygulama
+ * ekranı açılmaz. Çekirdek yoksa (süreç yeni açıldı ya da yoktu) eylem
  * şifreli kasaya yazılır ([Bekleyenler]), bildirim "Mailhere açılınca
- * uygulanacak" durumuna geçer; uygulama açılınca kuyruk boşalır.
+ * uygulanacak" durumuna geçer ve arka plan hizmeti başlatılmaya çalışılır
+ * (bildirim düğmesi arka plandan hizmet başlatmaya izin verir): hizmet
+ * etkinliksiz çekirdeği açar, kuyruk boşalır ve eylem saniyeler içinde
+ * uygulanır. Olmazsa uygulama açılınca uygulanır.
  */
 class BildirimAlici : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -34,7 +37,7 @@ class BildirimAlici : BroadcastReceiver() {
             }
         }
         val p = Bildirimler.postaOf(intent.extras) ?: return
-        val olay = JSObject().put("id", p.id).put("hesap", p.hesap)
+        val olay = JSONObject().put("id", p.id).put("hesap", p.hesap)
         when (intent.action) {
             Bildirimler.EYLEM_SILINDI -> {
                 Bildirimler.silindi(ctx, p)
@@ -42,6 +45,8 @@ class BildirimAlici : BroadcastReceiver() {
             }
             Bildirimler.EYLEM_OKUNDU -> olay.put("tur", "okundu")
             Bildirimler.EYLEM_ARSIVLE -> olay.put("tur", "arsivle")
+            Bildirimler.EYLEM_SIL -> olay.put("tur", "sil")
+            Bildirimler.EYLEM_ISTENMEYEN -> olay.put("tur", "istenmeyen")
             Bildirimler.EYLEM_YANIT -> {
                 val metin = RemoteInput.getResultsFromIntent(intent)
                     ?.getCharSequence(Bildirimler.ANAHTAR_YANIT)
@@ -61,13 +66,16 @@ class BildirimAlici : BroadcastReceiver() {
             }
             else -> return
         }
-        if (MhPlugin.ilet(olay)) return
-        // Süreç kapalıydı: kasa işleri ana iş parçacığını tutmasın.
+        if (ArkaKopru.eylemGonder(olay)) return
+        // Çekirdek yok: kasa işleri ana iş parçacığını tutmasın.
         val sonuc = goAsync()
         Thread {
             try {
                 Bekleyenler.ekle(ctx, olay)
                 Bildirimler.bekliyor(ctx, p)
+                // Hizmet çekirdeği açar ve kuyruğu uygular (Android 12+ bildirim
+                // düğmesinden hizmet başlatmaya izin verir).
+                ArkaPlan.baslatGerekirse(ctx)
             } catch (e: Exception) {
                 Log.w(TAG, "bildirim eylemi kaydedilemedi")
                 Bildirimler.hata(ctx, p.id, ctx.getString(R.string.bildirim_kaydedilemedi))
@@ -83,9 +91,9 @@ class BildirimAlici : BroadcastReceiver() {
 }
 
 /**
- * Süreç kapalıyken basılan bildirim eylemleri. Yanıt metni taşıyabildiği
- * için kasada (AndroidKeyStore, AES-GCM) tek kayıt olarak durur; uygulama
- * açılınca `bekleyenEylemler` ile boşaltılır. En çok [EN_COK] eylem.
+ * Çekirdek yokken basılan bildirim eylemleri. Yanıt metni taşıyabildiği
+ * için kasada (AndroidKeyStore, AES-GCM) tek kayıt olarak durur; çekirdek
+ * açılınca `ArkaKopru.bekleyenler` ile boşaltılır. En çok [EN_COK] eylem.
  */
 object Bekleyenler {
     private const val ANAHTAR = "bildirim-bekleyen"

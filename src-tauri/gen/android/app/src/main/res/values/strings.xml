@@ -24,16 +24,20 @@
     <string name="bildirim_okundu">Okundu</string>
     <string name="bildirim_arsivle">Arşivle</string>
     <string name="bildirim_yanitla">Yanıtla</string>
+    <string name="bildirim_sil">Sil</string>
+    <string name="bildirim_istenmeyen">İstenmeyen</string>
     <string name="bildirim_yanit_ipucu">Yanıtın</string>
     <string name="bildirim_yanit_kuyrukta">Yanıtın sayaç bitince gidecek. Vazgeçmek için Geri al.</string>
     <string name="bildirim_yanit_gidiyor">Yanıtın gönderiliyor.</string>
     <string name="bildirim_geri_al">Geri al</string>
     <string name="bildirim_yanit_geri_alindi">Yanıt geri alındı; gönderilmedi.</string>
     <string name="bildirim_yanit_gec">Yanıt zaten gönderildi; geri alınamadı.</string>
-    <string name="bildirim_bekliyor">Mailhere açılınca uygulanacak. Hemen uygulamak için dokun.</string>
+    <string name="bildirim_bekliyor">Birazdan uygulanacak; olmazsa Mailhere açılınca. Hemen uygulamak için dokun.</string>
     <string name="bildirim_kaydedilemedi">Bu işlem kaydedilemedi. Postayı Mailhere\'de açıp yeniden dene.</string>
     <string name="bildirim_hata">Bu işlem yapılamadı. Postayı Mailhere\'de açıp yeniden dene.</string>
     <string name="arka_baslik">Anlık bildirim açık</string>
-    <string name="arka_metin">Gelen kutularına bağlı; yeni posta anında gelir. Ayarlar › Bildirimler\'den kapatabilirsin.</string>
+    <string name="arka_metin">Gelen kutularına bağlı; yeni posta uygulama kapalıyken de anında gelir. Ayarlar › Bildirimler\'den kapatabilirsin.</string>
     <string name="arka_kapat">Kapat</string>
+    <string name="arka_yedek_baslik">Arka plan bağlantısı kurulamadı</string>
+    <string name="arka_yedek_metin">Android, Mailhere\'nin arka planda bağlanmasına izin vermedi. Posta 15 dakikada bir denetlenecek; Mailhere\'yi açınca anlık bağlantı geri gelir.</string>
 </resources>

@@ -22,7 +22,11 @@ import androidx.core.content.ContextCompat
 import com.furkanyildirim.mailhere.MainActivity
 import com.furkanyildirim.mailhere.R
 
-/** Bildirimi gösterilen posta (`src/notify.rs` → `Kart`, hesap bilgisiyle). */
+/**
+ * Bildirimi gösterilen posta (`src/notify.rs` → `Kart`, hesap bilgisi ve
+ * kullanıcının seçtiği düğmelerle). [eylemler] Kotlin düğme adlarıdır
+ * (`yanit`, `okundu`, `arsivle`, `sil`, `istenmeyen`), kullanıcının sırasıyla.
+ */
 data class Posta(
     val id: Long,
     val hesap: String,
@@ -31,11 +35,13 @@ data class Posta(
     val konu: String,
     val onizleme: String,
     val zaman: Long,
+    val eylemler: List<String> = emptyList(),
 )
 
 /**
  * Yeni posta bildirimleri (`NotificationCompat`). Rust yalnız veri gönderir
- * (`src/notify.rs`, `src/eylem.rs`); metinler burada, `strings.xml`dedir.
+ * (`src/notify.rs`, `src/eylem.rs`; etkinliksiz köprü [ArkaKopru]); metinler
+ * burada, `strings.xml`dedir.
  *
  * - Posta başına bir bildirim (etiket `posta:<id>`), hesap başına grup
  *   (`mailhere:<hesap>`) ve sabit etiketli özet (`ozet:<hesap>`, InboxStyle:
@@ -44,8 +50,12 @@ data class Posta(
  *   postalar ve özet sessizdir (`GROUP_ALERT_CHILDREN` + `setSilent`).
  * - Kilit ekranı: `VISIBILITY_PRIVATE` + açık sürüm (yalnız hesap adı ve
  *   "Yeni posta"); kullanıcı "hassas içeriği gizle" seçtiyse o görünür.
- * - Eylemler: Okundu, Arşivle, satır içi Yanıtla ([BildirimAlici]); dokununca
- *   posta açılır ([MainActivity] → [MhPlugin]).
+ * - Düğmeler kullanıcının ayarından (Ayarlar › Bildirimler; varsayılan
+ *   Yanıtla, Sil, İstenmeyen; en çok üç): Yanıtla satır içi (RemoteInput),
+ *   Okundu, Arşivle, Sil, İstenmeyen ([BildirimAlici]). Düğme listesi
+ *   bildirimin eklerinde saklanır; bildirim yeniden çizilince (hata, boş
+ *   yanıt) aynı düğmeler kurulur. Dokununca posta açılır ([MainActivity] →
+ *   [MhPlugin]).
  *
  * Özet, etkin bildirimlerden yeniden kurulur; `notify`/`cancel` eşzamansız
  * olduğundan eklenen ve çıkan etiketler ayrıca verilir.
@@ -57,6 +67,9 @@ object Bildirimler {
     /** Ön plan hizmetinin (anlık bildirim) kalıcı bildirimi; etiketsiz. */
     const val ID_ARKA = 7
 
+    /** Arka plandan hizmet başlatılamadı: yedek (yoklama) açıklaması; etiketsiz. */
+    const val ID_YEDEK = 8
+
     private const val ETIKET_POSTA = "posta:"
     private const val ETIKET_OZET = "ozet:"
     private const val GRUP = "mailhere:"
@@ -64,6 +77,9 @@ object Bildirimler {
 
     /** Özette gösterilen en çok satır. */
     private const val SATIR = 6
+
+    /** Android bildirimde en çok üç düğme gösterir (`mh_core::NOTIFY_ACTIONS_MAX`). */
+    private const val EN_COK_DUGME = 3
 
     // Bildirim ve niyet ekleri.
     const val E_ID = "mh.id"
@@ -73,12 +89,13 @@ object Bildirimler {
     const val E_KONU = "mh.konu"
     const val E_ONIZLEME = "mh.onizleme"
     const val E_ZAMAN = "mh.zaman"
+    const val E_EYLEMLER = "mh.eylemler"
     const val E_KUYRUK = "mh.kuyruk"
 
     /**
      * Bildirimin durumu: yoksa yeni posta (özette sayılır, eylemleri var);
-     * `yanit` yanıt giden kutusunda, `bilgi` kısa bilgi, `bekliyor` süreç
-     * kapalıyken alınan eylem uygulama açılınca uygulanacak.
+     * `yanit` yanıt giden kutusunda, `bilgi` kısa bilgi, `bekliyor` çekirdek
+     * yokken alınan eylem çekirdek açılınca uygulanacak.
      */
     private const val E_DURUM = "mh.durum"
     private const val YANIT = "yanit"
@@ -88,11 +105,20 @@ object Bildirimler {
     /** RemoteInput sonucu. */
     const val ANAHTAR_YANIT = "mh.yanit"
 
+    // Düğme adları (Rust `notify::eylem_adlari` ile aynı).
+    const val DUGME_YANIT = "yanit"
+    const val DUGME_OKUNDU = "okundu"
+    const val DUGME_ARSIVLE = "arsivle"
+    const val DUGME_SIL = "sil"
+    const val DUGME_ISTENMEYEN = "istenmeyen"
+
     // Niyet eylemleri (uygulamaya özel; alıcı dışa kapalı).
     const val EYLEM_AC = "com.furkanyildirim.mailhere.POSTA_AC"
     const val EYLEM_UYGULAMA = "com.furkanyildirim.mailhere.UYGULAMA"
     const val EYLEM_OKUNDU = "com.furkanyildirim.mailhere.OKUNDU"
     const val EYLEM_ARSIVLE = "com.furkanyildirim.mailhere.ARSIVLE"
+    const val EYLEM_SIL = "com.furkanyildirim.mailhere.SIL"
+    const val EYLEM_ISTENMEYEN = "com.furkanyildirim.mailhere.ISTENMEYEN"
     const val EYLEM_YANIT = "com.furkanyildirim.mailhere.YANIT"
     const val EYLEM_GERI_AL = "com.furkanyildirim.mailhere.GERI_AL"
     const val EYLEM_SILINDI = "com.furkanyildirim.mailhere.SILINDI"
@@ -228,8 +254,9 @@ object Bildirimler {
     }
 
     /**
-     * Süreç kapalıyken basılan eylem kasaya yazıldı: Mailhere açılınca
-     * uygulanacağı yazar; dokununca uygulama açılır ve kuyruk boşalır.
+     * Çekirdek yokken basılan eylem kasaya yazıldı: Mailhere açılınca (ya da
+     * arka plan hizmeti çekirdeği açınca) uygulanacağı yazar; dokununca
+     * uygulama açılır ve kuyruk boşalır.
      */
     fun bekliyor(ctx: Context, p: Posta) {
         val metin = ctx.getString(R.string.bildirim_bekliyor)
@@ -264,6 +291,7 @@ object Bildirimler {
             konu = x.getString(E_KONU) ?: "",
             onizleme = x.getString(E_ONIZLEME) ?: "",
             zaman = x.getLong(E_ZAMAN, 0),
+            eylemler = x.getStringArray(E_EYLEMLER)?.toList() ?: emptyList(),
         )
     }
 
@@ -275,6 +303,7 @@ object Bildirimler {
         putString(E_KONU, p.konu)
         putString(E_ONIZLEME, p.onizleme)
         putLong(E_ZAMAN, p.zaman)
+        putStringArray(E_EYLEMLER, p.eylemler.toTypedArray())
     }
 
     private fun vurgu(ctx: Context) = ContextCompat.getColor(ctx, R.color.vurgu)
@@ -336,31 +365,45 @@ object Bildirimler {
         return b.build()
     }
 
+    /** Kullanıcının seçtiği düğmeler, kendi sırasıyla; en çok üç. */
     private fun eylemler(ctx: Context, b: NotificationCompat.Builder, p: Posta) {
-        b.addAction(
-            NotificationCompat.Action.Builder(R.drawable.ic_okundu, ctx.getString(R.string.bildirim_okundu), alici(ctx, EYLEM_OKUNDU, p))
-                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
-                .setShowsUserInterface(false)
-                .build(),
-        )
-        b.addAction(
-            NotificationCompat.Action.Builder(R.drawable.ic_arsiv, ctx.getString(R.string.bildirim_arsivle), alici(ctx, EYLEM_ARSIVLE, p))
-                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_ARCHIVE)
-                .setShowsUserInterface(false)
-                .build(),
-        )
+        for (ad in p.eylemler.distinct().take(EN_COK_DUGME)) {
+            val eylem = when (ad) {
+                DUGME_YANIT -> yanitEylemi(ctx, p)
+                DUGME_OKUNDU -> dugme(ctx, p, R.drawable.ic_okundu, R.string.bildirim_okundu, EYLEM_OKUNDU, NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                DUGME_ARSIVLE -> dugme(ctx, p, R.drawable.ic_arsiv, R.string.bildirim_arsivle, EYLEM_ARSIVLE, NotificationCompat.Action.SEMANTIC_ACTION_ARCHIVE)
+                DUGME_SIL -> dugme(ctx, p, R.drawable.ic_sil, R.string.bildirim_sil, EYLEM_SIL, NotificationCompat.Action.SEMANTIC_ACTION_DELETE)
+                DUGME_ISTENMEYEN -> dugme(ctx, p, R.drawable.ic_istenmeyen, R.string.bildirim_istenmeyen, EYLEM_ISTENMEYEN, NotificationCompat.Action.SEMANTIC_ACTION_NONE)
+                else -> continue
+            }
+            b.addAction(eylem)
+        }
+    }
+
+    private fun dugme(
+        ctx: Context,
+        p: Posta,
+        ikon: Int,
+        metin: Int,
+        eylem: String,
+        anlam: Int,
+    ): NotificationCompat.Action =
+        NotificationCompat.Action.Builder(ikon, ctx.getString(metin), alici(ctx, eylem, p))
+            .setSemanticAction(anlam)
+            .setShowsUserInterface(false)
+            .build()
+
+    private fun yanitEylemi(ctx: Context, p: Posta): NotificationCompat.Action {
         val giris = RemoteInput.Builder(ANAHTAR_YANIT)
             .setLabel(ctx.getString(R.string.bildirim_yanit_ipucu))
             .build()
-        b.addAction(
-            NotificationCompat.Action.Builder(R.drawable.ic_yanit, ctx.getString(R.string.bildirim_yanitla), alici(ctx, EYLEM_YANIT, p, degisken = true))
-                .addRemoteInput(giris)
-                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
-                // Sistem önerili yanıt üretmez: ne yazılacağına kullanıcı karar verir.
-                .setAllowGeneratedReplies(false)
-                .setShowsUserInterface(false)
-                .build(),
-        )
+        return NotificationCompat.Action.Builder(R.drawable.ic_yanit, ctx.getString(R.string.bildirim_yanitla), alici(ctx, EYLEM_YANIT, p, degisken = true))
+            .addRemoteInput(giris)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            // Sistem önerili yanıt üretmez: ne yazılacağına kullanıcı karar verir.
+            .setAllowGeneratedReplies(false)
+            .setShowsUserInterface(false)
+            .build()
     }
 
     /** Özet: etkin yeni posta bildirimleri (− çıkan, + eklenen) üzerinden. */
@@ -457,6 +500,33 @@ object Bildirimler {
             )
             .build()
 
+    /**
+     * Arka plandan hizmet başlatılamadı (Android izin vermedi): yedek
+     * yoklamanın çalıştığını ve uygulamayı açınca anlık bağlantının geri
+     * geleceğini söyleyen sessiz bildirim. Hizmet başlayınca kalkar.
+     */
+    fun yedekGoster(ctx: Context) {
+        val metin = ctx.getString(R.string.arka_yedek_metin)
+        val n = NotificationCompat.Builder(ctx, KANAL_ARKA)
+            .setSmallIcon(R.drawable.ic_bildirim)
+            .setColor(vurgu(ctx))
+            .setContentTitle(ctx.getString(R.string.arka_yedek_baslik))
+            .setContentText(metin)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(metin))
+            .setSilent(true)
+            .setShowWhen(false)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setContentIntent(uygulamaNiyeti(ctx))
+            .build()
+        gonder(ctx, null, n, ID_YEDEK)
+    }
+
+    fun yedekKaldir(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(ID_YEDEK)
+    }
+
     /** Postayı açan niyet (tek pencere; `singleTask` etkinliğe `onNewIntent`). */
     private fun acmaNiyeti(ctx: Context, p: Posta): PendingIntent {
         val i = Intent(ctx, MainActivity::class.java)
@@ -513,11 +583,11 @@ object Bildirimler {
 
     /** İzin yoksa (Android 13+) ya da bildirimler kapalıysa sessizce geçer. */
     @SuppressLint("MissingPermission")
-    private fun gonder(ctx: Context, etiket: String, n: Notification) {
+    private fun gonder(ctx: Context, etiket: String?, n: Notification, id: Int = 0) {
         val nm = NotificationManagerCompat.from(ctx)
         if (!nm.areNotificationsEnabled()) return
         try {
-            nm.notify(etiket, 0, n)
+            nm.notify(etiket, id, n)
         } catch (e: SecurityException) {
             Log.w(TAG, "bildirim izni yok")
         }

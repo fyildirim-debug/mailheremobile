@@ -12,26 +12,40 @@ use mh_core::{
     events, AppError, AppResult, ComposePrefill, MessageId, NavigateEvent, NotifyEvent, OpenEvent,
     Settings,
 };
-use tauri::{AppHandle, Emitter, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 pub struct AndroidPlatform;
 
 impl Platform for AndroidPlatform {
-    fn notify(&self, app: &AppHandle, ev: NotifyEvent, _settings: &Settings) {
-        crate::notify::show(app, &ev);
+    /// Sistem bildirimi; düğmeler kullanıcının ayarından (İstenmeyen yalnız
+    /// hesabın `junk` kutusu varsa). Pencere yok edilmiş olsa da çalışır
+    /// (JNI köprüsü). Masaüstü geliştirme ikilisinde işletim sisteminin
+    /// ortak bildirimi.
+    fn notify(&self, app: &AppHandle, ev: NotifyEvent, settings: &Settings) {
+        if !cfg!(target_os = "android") {
+            return mh_app::notify::native(app, &ev);
+        }
+        let has_junk = app
+            .try_state::<mh_app::AppState>()
+            .map(|s| mh_app::notify_actions::has_junk(&s, &ev.message.account_id).unwrap_or(false))
+            .unwrap_or(false);
+        crate::notify::show(&ev, crate::notify::eylem_adlari(settings, has_junk));
     }
 
     /// Android'de tepsi ya da rozet yok; sayacı arayüz `mh:changed` ile
     /// yeniler. Okunan, taşınan ya da silinen postaların bildirimleri burada
     /// kalkar (başka cihazda okunanlar dahil).
-    fn counts_changed(&self, app: &AppHandle) {
-        crate::notify::reconcile_soon(app);
+    fn counts_changed(&self, _app: &AppHandle) {
+        crate::notify::reconcile_soon();
     }
 
     /// Kart penceresi yok; sessize alma bildirim kararında uygulanır.
     fn muted(&self, _app: &AppHandle) {}
 
+    /// Pencere yok edilmişse (anlık bildirim açık, görev kaydırılmış) olay
+    /// gidecek yer bulamaz ve sessizce düşer; posta, kullanıcı bildirime
+    /// dokununca açılan yeni süreçte açılır.
     fn open_main(&self, app: &AppHandle, id: Option<MessageId>) {
         if let Some(id) = id {
             if let Err(e) = app.emit_to(crate::MAIN, events::OPEN, OpenEvent { id }) {

@@ -1,46 +1,37 @@
 //! Android anahtar kasası köprüsü: parolalar, OAuth yenileme jetonları ve
 //! veritabanı anahtarı (`db-key`) `SecretVault.kt`te, `AndroidKeyStore` ile
 //! korunan AES-256-GCM anahtarıyla şifrelenir ve `mailhere-kasa` tercih
-//! dosyasında durur. Buradaki kod yalnız JSON eşlemesi yapar; değerler
+//! dosyasında durur. Kasaya etkinliksiz JNI köprüsünden gidilir
+//! (`kopru.rs` → `ArkaKopru.kasaOku/kasaYaz/kasaSil`): her IMAP bağlantısı
+//! bir okuma yapar ve bu, pencere yok edildikten sonra ya da hiç pencere
+//! açılmadan da olur. Buradaki kod yalnız hata eşlemesi yapar; değerler
 //! günlüğe ya da hata metnine yazılmaz.
-//!
-//! Kotlin komutları: `secretGet { key } → { value: string | null }`,
-//! `secretSet { key, value } → null`, `secretDelete { key } → null`.
 
 use mh_core::{AppError, AppResult, ErrorCode};
 use mh_sync::SecretStore;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tauri::AppHandle;
 
-/// Kotlin tarafına giden çağrı; testte sahte uygulamayla değiştirilir.
+/// Kotlin tarafına giden çağrılar; testte sahte kasayla değiştirilir.
 pub trait VaultBridge: Send + Sync + 'static {
-    fn call(&self, command: &str, payload: Value) -> Result<Value, String>;
+    fn get(&self, key: &str) -> Result<Option<String>, String>;
+    fn set(&self, key: &str, value: &str) -> Result<(), String>;
+    fn delete(&self, key: &str) -> Result<(), String>;
 }
 
-/// Gerçek köprü: uygulama içi eklenti (`plugin::call`).
-pub struct PluginBridge(AppHandle);
+/// Gerçek köprü: JNI (`kopru.rs`).
+pub struct KopruBridge;
 
-impl VaultBridge for PluginBridge {
-    fn call(&self, command: &str, payload: Value) -> Result<Value, String> {
-        crate::plugin::call(&self.0, command, payload)
+impl VaultBridge for KopruBridge {
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        crate::kopru::kasa_oku(key)
     }
-}
 
-#[derive(Serialize)]
-struct KeyArg<'a> {
-    key: &'a str,
-}
+    fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        crate::kopru::kasa_yaz(key, value)
+    }
 
-#[derive(Serialize)]
-struct SetArg<'a> {
-    key: &'a str,
-    value: &'a str,
-}
-
-#[derive(Deserialize)]
-struct ValueResponse {
-    value: Option<String>,
+    fn delete(&self, key: &str) -> Result<(), String> {
+        crate::kopru::kasa_sil(key)
+    }
 }
 
 fn vault_err(command: &str, e: impl std::fmt::Display) -> AppError {
@@ -57,15 +48,16 @@ pub struct KeystoreSecrets<B: VaultBridge> {
     bridge: B,
 }
 
-pub type AndroidKeystoreSecrets = KeystoreSecrets<PluginBridge>;
+pub type AndroidKeystoreSecrets = KeystoreSecrets<KopruBridge>;
 
 impl AndroidKeystoreSecrets {
-    /// Eklenti kayıtlı değilse (Android dışı) hata döner.
-    pub fn new(app: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
-        if !cfg!(target_os = "android") {
+    /// JNI köprüsü kurulu değilse (Android dışı ya da `Application.onCreate`
+    /// çalışmadı) hata döner.
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        if !crate::kopru::kuruldu() {
             return Err("Android anahtar kasası yalnız Android'de var; masaüstünde MAILHERE_SECRETS=memory ile aç".into());
         }
-        Ok(Self::with_bridge(PluginBridge(app.clone())))
+        Ok(Self::with_bridge(KopruBridge))
     }
 }
 
@@ -73,41 +65,25 @@ impl<B: VaultBridge> KeystoreSecrets<B> {
     pub fn with_bridge(bridge: B) -> Self {
         Self { bridge }
     }
-
-    fn run<T: serde::de::DeserializeOwned>(
-        &self,
-        command: &str,
-        payload: impl Serialize,
-    ) -> AppResult<T> {
-        let payload = serde_json::to_value(payload).map_err(|e| vault_err(command, e))?;
-        let out = self
-            .bridge
-            .call(command, payload)
-            .map_err(|e| vault_err(command, e))?;
-        serde_json::from_value(out).map_err(|e| vault_err(command, e))
-    }
 }
 
 impl<B: VaultBridge> SecretStore for KeystoreSecrets<B> {
     fn get(&self, account_id: &str) -> AppResult<Option<String>> {
-        let r: ValueResponse = self.run("secretGet", KeyArg { key: account_id })?;
-        Ok(r.value)
+        self.bridge
+            .get(account_id)
+            .map_err(|e| vault_err("kasaOku", e))
     }
 
     fn set(&self, account_id: &str, secret: &str) -> AppResult<()> {
-        self.run::<Value>(
-            "secretSet",
-            SetArg {
-                key: account_id,
-                value: secret,
-            },
-        )?;
-        Ok(())
+        self.bridge
+            .set(account_id, secret)
+            .map_err(|e| vault_err("kasaYaz", e))
     }
 
     fn delete(&self, account_id: &str) -> AppResult<()> {
-        self.run::<Value>("secretDelete", KeyArg { key: account_id })?;
-        Ok(())
+        self.bridge
+            .delete(account_id)
+            .map_err(|e| vault_err("kasaSil", e))
     }
 }
 
@@ -117,7 +93,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    /// Kotlin kasasının JSON sözleşmesini taklit eder.
+    /// Kotlin kasasının sözleşmesini taklit eder.
     #[derive(Default)]
     struct FakeVault {
         map: Mutex<HashMap<String, String>>,
@@ -125,30 +101,29 @@ mod tests {
     }
 
     impl VaultBridge for FakeVault {
-        fn call(&self, command: &str, payload: Value) -> Result<Value, String> {
+        fn get(&self, key: &str) -> Result<Option<String>, String> {
             if self.fail {
                 return Err("Anahtar kasası okunamadı".into());
             }
-            let key = payload["key"].as_str().ok_or("key yok")?.to_owned();
-            let mut map = self.map.lock().unwrap();
-            match command {
-                "secretGet" => Ok(serde_json::json!({ "value": map.get(&key) })),
-                "secretSet" => {
-                    let value = payload["value"].as_str().ok_or("value yok")?;
-                    map.insert(key, value.to_owned());
-                    Ok(Value::Null)
-                }
-                "secretDelete" => {
-                    map.remove(&key);
-                    Ok(Value::Null)
-                }
-                other => Err(format!("bilinmeyen komut {other}")),
+            Ok(self.map.lock().unwrap().get(key).cloned())
+        }
+
+        fn set(&self, key: &str, value: &str) -> Result<(), String> {
+            if self.fail {
+                return Err("Anahtar kasası yazılamadı".into());
             }
+            self.map.lock().unwrap().insert(key.into(), value.into());
+            Ok(())
+        }
+
+        fn delete(&self, key: &str) -> Result<(), String> {
+            self.map.lock().unwrap().remove(key);
+            Ok(())
         }
     }
 
     #[test]
-    fn json_eslemesi_gidip_gelir() {
+    fn kasa_gidip_gelir() {
         let s = KeystoreSecrets::with_bridge(FakeVault::default());
         assert_eq!(s.get("hesap-1").unwrap(), None);
         s.set("hesap-1", "çok gizli").unwrap();
@@ -172,6 +147,11 @@ mod tests {
         assert!(!err.message.contains("parola123"));
         assert!(!err.message.contains("hesap-1"));
         assert_eq!(s.get("hesap-1").unwrap_err().code, ErrorCode::Keyring);
+    }
+
+    #[test]
+    fn masaustunde_kasa_yok() {
+        assert!(AndroidKeystoreSecrets::new().is_err());
     }
 
     /// Veritabanı anahtarı da aynı kasada, `db-key` adıyla durur

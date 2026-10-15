@@ -12,7 +12,6 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.result.ActivityResult
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import app.tauri.annotation.ActivityCallback
@@ -20,26 +19,10 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
-import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
-import com.furkanyildirim.mailhere.R
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-
-@InvokeArg
-class KeyArgs {
-    lateinit var key: String
-}
-
-@InvokeArg
-class SetArgs {
-    lateinit var key: String
-    lateinit var value: String
-}
 
 @InvokeArg
 class UriArgs {
@@ -52,62 +35,9 @@ class BarsArgs {
 }
 
 @InvokeArg
-class ChannelArgs {
-    lateinit var channel: String
-}
-
-@InvokeArg
 class FileArgs {
     lateinit var path: String
     var mime: String? = null
-}
-
-/** `src/notify.rs` → `Kart`. */
-@InvokeArg
-class KartArgs {
-    var id: Long = 0
-    var gonderen: String = ""
-    var konu: String = ""
-    var onizleme: String = ""
-    var zaman: Long = 0
-}
-
-/** `src/notify.rs` → `HesapGrubu`. */
-@InvokeArg
-class GrupArgs {
-    var hesap: String = ""
-    var hesapAdi: String = ""
-    var postalar: List<KartArgs> = listOf()
-}
-
-@InvokeArg
-class PostaBildirArgs {
-    var gruplar: List<GrupArgs> = listOf()
-}
-
-@InvokeArg
-class IdlerArgs {
-    var ids: List<Long> = listOf()
-}
-
-@InvokeArg
-class HataArgs {
-    var id: Long = 0
-    var metin: String = ""
-}
-
-@InvokeArg
-class YanitArgs {
-    var id: Long = 0
-    var kuyruk: String = ""
-    var gonderim: Long = 0
-    var metin: String = ""
-}
-
-@InvokeArg
-class GeriAlArgs {
-    var id: Long = 0
-    var iptal: Boolean = false
 }
 
 @InvokeArg
@@ -121,38 +51,35 @@ class HaptikArgs {
 }
 
 /**
- * Mailhere'nin uygulama içi eklentisi; yalnız Rust tarafından çağrılır
- * (`mh-android`, `src/plugin.rs`). Arayüzden erişilen komutu yoktur.
+ * Mailhere'nin uygulama içi eklentisi; yalnız Rust tarafından, **pencere
+ * varken** çağrılır (`mh-android`, `src/plugin.rs`). Arayüzden erişilen
+ * komutu yoktur. Buradaki her komut arayüzden gelen bir isteğin sonucudur
+ * (dosya, QR, çubuklar, pil, anlık bildirim anahtarı, dokunsal geri bildirim,
+ * bildirim ayarları sayfası); çekirdeğin kendi başlattığı işler (kasa, yeni
+ * posta bildirimi, bildirim eylemleri) etkinlik gerektirmeyen JNI köprüsünden
+ * geçer ([ArkaKopru]), çünkü Tauri'nin eklenti köprüsü etkinlik yok
+ * edilmişken panikler.
  *
- * - `secretGet` / `secretSet` / `secretDelete`: [SecretVault].
  * - `fileName`: `content://` adresinin görünen adı (ek olarak eklenen dosya).
  * - `openFile` / `shareFile`: önbellekteki (`cache/ekler/`) bir dosyayı
  *   `FileProvider` ile, yalnız o dosyaya özel geçici okuma izniyle açar ya da
  *   paylaşır.
  * - `scanQr`: tam ekran [QrScanActivity]; `{ text: string | null }`.
  * - `systemBars`: durum ve gezinme çubuğu simgelerini uygulamanın temasına uydurur.
- * - `notificationsEnabled`: uygulamanın ve posta kanalının bildirimleri açık mı
- *   (izin verilmiş olsa da kullanıcı sistem ayarlarından kapatmış olabilir).
  * - `openNotificationSettings`: Mailhere'nin sistem bildirim ayarları.
- * - Yeni posta bildirimleri ([Bildirimler]): `postaBildir`, `bildirimKaldir`,
- *   `bildirimHata`, `yanitKuyrukta`, `yanitGeriAlindi`, `etkinBildirimler`.
- *   Bildirim eylemleri ve dokunuşlar Rust'a `bildirim` olayıyla gider
- *   (`src/eylem.rs` kanalı kaydeder); süreç kapalıyken birikenler ve soğuk
- *   açılıştaki dokunuş `bekleyenEylemler` ile alınır.
  * - Bildirim sağlığı: `pilDurumu`, `pilAyarlari`, `arkaPlanDurumu`,
  *   `arkaPlanAyarla` ([ArkaPlan]).
  * - `haptic`: dokunsal geri bildirim (sistem ayarına uyar).
+ *
+ * Bildirime dokunuş etkinliğe gelir ([bildirimdenAc]) ve `ArkaKopru.eylem`
+ * ile Rust'a `ac` eylemi gider; çekirdek henüz dinlemiyorsa (soğuk açılış)
+ * [Yasam] saklar, çekirdek açılınca `ArkaKopru.bekleyenler` ile alır.
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
-    private val vault by lazy { SecretVault(activity) }
     private val ctx: Context = activity.applicationContext
 
-    /** Soğuk açılışta dokunulan bildirimin postası (Rust dinlemeye başlayınca alınır). */
-    private var acilacak: Long? = null
-
     init {
-        ornek = this
         Bildirimler.kanallar(ctx)
         bildirimdenAc(activity.intent)
     }
@@ -170,63 +97,8 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         // Aynı niyet (ör. yapılandırma değişikliği) ikinci kez işlenmesin.
         intent.action = null
         Bildirimler.dokunuldu(ctx, id, intent.getStringExtra(Bildirimler.E_HESAP))
-        if (!ilet(JSObject().put("tur", "ac").put("id", id))) {
-            synchronized(this) { acilacak = id }
-        }
-    }
-
-    /**
-     * Kasa işleri (donanım kasasında AES-GCM, `SharedPreferences.commit()`)
-     * eklenti komutlarının geldiği ana iş parçacığını tutmasın: her IMAP
-     * bağlantısı bir okuma yapar, açılışta ve yeniden bağlanmada arayüz
-     * takılırdı. Tek iş parçacığı sırayı korur.
-     */
-    private val kasaIsi: ExecutorService = Executors.newSingleThreadExecutor()
-
-    @Command
-    fun secretGet(invoke: Invoke) {
-        val args = invoke.parseArgs(KeyArgs::class.java)
-        kasaIsi.execute {
-            try {
-                val value = vault.get(args.key)
-                val result = JSObject()
-                result.put("value", value ?: JSONObject.NULL)
-                invoke.resolve(result)
-            } catch (e: VaultException) {
-                invoke.reject(e.message ?: "kasa okunamadı")
-            } catch (e: Exception) {
-                invoke.reject("kasa okunamadı")
-            }
-        }
-    }
-
-    @Command
-    fun secretSet(invoke: Invoke) {
-        val args = invoke.parseArgs(SetArgs::class.java)
-        kasaIsi.execute {
-            try {
-                vault.set(args.key, args.value)
-                invoke.resolve()
-            } catch (e: VaultException) {
-                invoke.reject(e.message ?: "kasaya yazılamadı")
-            } catch (e: Exception) {
-                invoke.reject("kasaya yazılamadı")
-            }
-        }
-    }
-
-    @Command
-    fun secretDelete(invoke: Invoke) {
-        val args = invoke.parseArgs(KeyArgs::class.java)
-        kasaIsi.execute {
-            try {
-                vault.delete(args.key)
-                invoke.resolve()
-            } catch (e: VaultException) {
-                invoke.reject(e.message ?: "kasadan silinemedi")
-            } catch (e: Exception) {
-                invoke.reject("kasadan silinemedi")
-            }
+        if (!ArkaKopru.eylemGonder(JSONObject().put("tur", "ac").put("id", id))) {
+            Yasam.acilacakYaz(id)
         }
     }
 
@@ -341,19 +213,6 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
-    fun notificationsEnabled(invoke: Invoke) {
-        val args = invoke.parseArgs(ChannelArgs::class.java)
-        val manager = NotificationManagerCompat.from(activity)
-        // Kanal henüz yoksa (ilk açılış) uygulama düzeyindeki durum geçerlidir.
-        val channelOff = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            manager.getNotificationChannel(args.channel)?.importance ==
-            NotificationManagerCompat.IMPORTANCE_NONE
-        val result = JSObject()
-        result.put("enabled", manager.areNotificationsEnabled() && !channelOff)
-        invoke.resolve(result)
-    }
-
-    @Command
     fun openNotificationSettings(invoke: Invoke) {
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -367,77 +226,6 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (e: ActivityNotFoundException) {
             invoke.reject("Bildirim ayarları açılamadı")
-        }
-    }
-
-    @Command
-    fun postaBildir(invoke: Invoke) {
-        val args = invoke.parseArgs(PostaBildirArgs::class.java)
-        for (g in args.gruplar) {
-            val postalar = g.postalar.map {
-                Posta(it.id, g.hesap, g.hesapAdi, it.gonderen, it.konu, it.onizleme, it.zaman)
-            }
-            Bildirimler.postaGoster(ctx, g.hesap, g.hesapAdi, postalar)
-        }
-        invoke.resolve()
-    }
-
-    @Command
-    fun bildirimKaldir(invoke: Invoke) {
-        val args = invoke.parseArgs(IdlerArgs::class.java)
-        Bildirimler.kaldir(ctx, args.ids)
-        invoke.resolve()
-    }
-
-    @Command
-    fun bildirimHata(invoke: Invoke) {
-        val args = invoke.parseArgs(HataArgs::class.java)
-        val metin = args.metin.ifBlank { ctx.getString(R.string.bildirim_hata) }
-        Bildirimler.hata(ctx, args.id, metin)
-        invoke.resolve()
-    }
-
-    @Command
-    fun yanitKuyrukta(invoke: Invoke) {
-        val args = invoke.parseArgs(YanitArgs::class.java)
-        Bildirimler.yanitKuyrukta(ctx, args.id, args.kuyruk, args.gonderim, args.metin)
-        invoke.resolve()
-    }
-
-    @Command
-    fun yanitGeriAlindi(invoke: Invoke) {
-        val args = invoke.parseArgs(GeriAlArgs::class.java)
-        Bildirimler.yanitGeriAlindi(ctx, args.id, args.iptal)
-        invoke.resolve()
-    }
-
-    /** Hâlâ "yeni posta" durumundaki bildirimler: `{ ids: number[] }`. */
-    @Command
-    fun etkinBildirimler(invoke: Invoke) {
-        val result = JSObject()
-        result.put("ids", JSArray(Bildirimler.etkinPostalar(ctx)))
-        invoke.resolve(result)
-    }
-
-    /**
-     * Süreç kapalıyken alınan eylemler (kasadan; alınınca silinir) ve soğuk
-     * açılışta dokunulan bildirim: `{ eylemler: object[] }`.
-     */
-    @Command
-    fun bekleyenEylemler(invoke: Invoke) {
-        kasaIsi.execute {
-            val eylemler = try {
-                Bekleyenler.bosalt(ctx)
-            } catch (e: Exception) {
-                JSONArray()
-            }
-            synchronized(this) {
-                acilacak?.let { eylemler.put(JSObject().put("tur", "ac").put("id", it)) }
-                acilacak = null
-            }
-            val result = JSObject()
-            result.put("eylemler", eylemler)
-            invoke.resolve(result)
         }
     }
 
@@ -499,7 +287,7 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
-    /** Anlık bildirim açık mı: `{ acik: boolean }`. */
+    /** Anlık bildirim açık mı: `{ acik: boolean }` (seçilmemişse açık). */
     @Command
     fun arkaPlanDurumu(invoke: Invoke) {
         val result = JSObject()
@@ -577,25 +365,6 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         const val EKLER = "ekler"
-
-        /** Rust'a giden olay (`src/eylem.rs` → `EVENT`). */
-        const val OLAY = "bildirim"
-
-        /** Süreçteki eklenti (alıcı ve hizmet buradan Rust'a ulaşır). */
-        @Volatile
-        var ornek: MhPlugin? = null
-            private set
-
-        /**
-         * Olayı Rust'a iletir; çekirdek dinlemiyorsa (süreç yeni açıldı ya da
-         * kurulum sürüyor) `false`.
-         */
-        fun ilet(olay: JSObject): Boolean {
-            val p = ornek ?: return false
-            if (!p.hasListener(OLAY)) return false
-            p.trigger(OLAY, olay)
-            return true
-        }
 
         /** `scanQr` ret iletileri (`src/qr.rs` ile aynı). */
         const val HATA_IZIN = "kamera-izni"

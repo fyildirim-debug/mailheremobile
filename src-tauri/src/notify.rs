@@ -1,30 +1,38 @@
 //! Sistem bildirimi: Android 13+ izin isteği ve yeni posta bildirimleri.
 //!
 //! Bildirimi Kotlin tarafı (`Bildirimler.kt`, `NotificationCompat`) çizer;
-//! buradan yalnız veri gider:
+//! buradan yalnız veri gider — etkinlik olsa da olmasa da JNI köprüsünden
+//! (`kopru.rs`, `ArkaKopru.bildir`), çünkü çekirdek pencere yok edildikten
+//! sonra da (anlık bildirim) ve hiç pencere açılmadan da (etkinliksiz
+//! çekirdek) bildirim üretir:
 //!
 //! - Hesap başına grup ve sabit kimlikli özet ("N yeni posta", satır satır
 //!   gönderen ve konu). Aynı eşitlemede gelen postalar tek seferde gönderilir
 //!   ([`NotifyQueue`]): yalnız en yenisi ses çıkarır ve üstten görünür, öteki
 //!   postalar ve özet sessizdir (bir yığın = bir ses).
+//! - Düğmeler kullanıcının seçtiği sırayla (`Settings.notify_actions`;
+//!   varsayılan Yanıtla, Sil, İstenmeyen; en çok üç). Hesabın İstenmeyen
+//!   kutusu yoksa o düğme gösterilmez ([`eylem_adlari`]).
 //! - Gövdede konu ve önizlemenin ilk satırı; ek adı ve posta gövdesi taşınmaz.
 //! - Kilit ekranında (kullanıcı "hassas içeriği gizle" seçtiyse) yalnız hesap
 //!   adı ve "Yeni posta" görünür (`setPublicVersion`).
-//! - Okundu / Arşivle / Yanıtla eylemleri `eylem.rs`te işlenir.
+//! - Düğmeler `eylem.rs`te işlenir.
 //!
-//! Elek'e düşen postalar buraya hiç gelmez: `mh_app::sink` onları
-//! `Platform::notify`tan önce ayıklar (`mh_app::screener::screen`).
-//! Okunan, taşınan ya da silinen postanın bildirimi kendiliğinden kalkar
-//! ([`reconcile_soon`]); başka cihazda okunan posta da buna dahildir.
+//! Elek'e düşen postalar buraya hiç gelmez: bildirim kararı (`mh_app::sink`)
+//! onları `Platform::notify`tan önce ayıklar. Okunan, taşınan ya da silinen
+//! postanın bildirimi kendiliğinden kalkar ([`reconcile_soon`]); başka
+//! cihazda okunan posta da buna dahildir.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use mh_core::{AppError, MailboxRole, MessageId, MessageSummary, Millis, NotifyEvent};
-use serde::{Deserialize, Serialize};
+use mh_core::{
+    AppError, MailboxRole, MessageId, MessageSummary, Millis, NotifyAction, NotifyEvent, Settings,
+};
+use serde::Serialize;
 use tauri::plugin::PermissionState;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
 type Res<T> = Result<T, AppError>;
@@ -42,7 +50,7 @@ const RECONCILE: Duration = Duration::from_millis(1500);
 /// Önizleme satırının en çok uzunluğu (karakter).
 const PREVIEW_CHARS: usize = 160;
 
-/// Tek posta bildirimi (Kotlin `postaBildir` girdisi).
+/// Tek posta bildirimi (Kotlin `ArkaKopru.bildir` → `Bildirimler.postaGoster`).
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Kart {
@@ -56,13 +64,41 @@ pub struct Kart {
     pub zaman: Millis,
 }
 
-/// Bir hesabın aynı yığında gelen postaları (eskiden yeniye).
+/// Bir hesabın aynı yığında gelen postaları (eskiden yeniye) ve düğmeleri.
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HesapGrubu {
     pub hesap: String,
     pub hesap_adi: String,
+    /// Kotlin düğme adları, kullanıcının sırasıyla: `yanit`, `okundu`,
+    /// `arsivle`, `sil`, `istenmeyen`.
+    pub eylemler: Vec<String>,
     pub postalar: Vec<Kart>,
+}
+
+/// Kuyruktaki posta: olay ve o anki düğme listesi.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bekleyen {
+    pub ev: NotifyEvent,
+    pub eylemler: Vec<String>,
+}
+
+/// Ayardaki düğmeler Kotlin adlarıyla, sıra korunarak. İstenmeyen yalnız
+/// hesabın `junk` kutusu varsa; bilinmeyen değer atlanır.
+pub fn eylem_adlari(settings: &Settings, has_junk: bool) -> Vec<String> {
+    settings
+        .notify_actions
+        .iter()
+        .filter_map(|a| match a {
+            NotifyAction::Reply => Some("yanit"),
+            NotifyAction::MarkRead => Some("okundu"),
+            NotifyAction::Archive => Some("arsivle"),
+            NotifyAction::Trash => Some("sil"),
+            NotifyAction::Spam if has_junk => Some("istenmeyen"),
+            NotifyAction::Spam | NotifyAction::Unknown => None,
+        })
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Önizlemenin ilk dolu satırı; boşluklar teke iner, uzunsa `…` ile kısalır.
@@ -96,9 +132,11 @@ pub fn kart(ev: &NotifyEvent) -> Kart {
 
 /// Yığını hesaplara böler: hesaplar ilk görüldükleri sırada, postalar
 /// tarihe göre eskiden yeniye; aynı posta iki kez gelirse bir kez yazılır.
-pub fn group(batch: &[NotifyEvent]) -> Vec<HesapGrubu> {
+/// Düğmeler hesabın son postasının listesidir (aynı ayar).
+pub fn group(batch: &[Bekleyen]) -> Vec<HesapGrubu> {
     let mut out: Vec<HesapGrubu> = Vec::new();
-    for ev in batch {
+    for b in batch {
+        let ev = &b.ev;
         let account = &ev.message.account_id;
         let i = match out.iter().position(|g| &g.hesap == account) {
             Some(i) => i,
@@ -106,6 +144,7 @@ pub fn group(batch: &[NotifyEvent]) -> Vec<HesapGrubu> {
                 out.push(HesapGrubu {
                     hesap: account.clone(),
                     hesap_adi: ev.account_name.clone(),
+                    eylemler: Vec::new(),
                     postalar: Vec::new(),
                 });
                 out.len() - 1
@@ -114,6 +153,7 @@ pub fn group(batch: &[NotifyEvent]) -> Vec<HesapGrubu> {
         let g = &mut out[i];
         // Hesabın güncel adı (yeniden adlandırılmış olabilir).
         g.hesap_adi = ev.account_name.clone();
+        g.eylemler = b.eylemler.clone();
         match g.postalar.iter_mut().find(|k| k.id == ev.message.id) {
             Some(k) => *k = kart(ev),
             None => g.postalar.push(kart(ev)),
@@ -125,75 +165,72 @@ pub fn group(batch: &[NotifyEvent]) -> Vec<HesapGrubu> {
     out
 }
 
-/// Bildirim kuyruğu ve temizleme zamanlayıcısı (Tauri durumunda).
+/// Bildirim kuyruğu ve temizleme zamanlayıcısı; süreçte tektir, hangi
+/// çekirdeğin (pencereli / etkinliksiz) ürettiğinden bağımsız.
 #[derive(Default)]
 pub struct NotifyQueue {
-    pending: Mutex<Vec<NotifyEvent>>,
+    pending: Mutex<Vec<Bekleyen>>,
     flush_scheduled: AtomicBool,
     reconcile_scheduled: AtomicBool,
 }
 
-/// Kuyruğu yönetime alır. Kanallar eklenti açılırken oluşturulur
-/// (`MhPlugin` → `Bildirimler.kanallar`).
-pub fn setup(app: &AppHandle) {
-    app.manage(NotifyQueue::default());
-}
+static QUEUE: NotifyQueue = NotifyQueue {
+    pending: Mutex::new(Vec::new()),
+    flush_scheduled: AtomicBool::new(false),
+    reconcile_scheduled: AtomicBool::new(false),
+};
 
-/// Eklenti çağrısı Android'in ana iş parçacığını bekler; eşzamansız çalışma
-/// iş parçacığını tutmasın.
-pub(crate) async fn plugin_call<T: serde::de::DeserializeOwned + Send + 'static>(
-    app: &AppHandle,
-    command: &'static str,
-    payload: serde_json::Value,
-) -> Result<T, String> {
-    let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::plugin::call::<T>(&app, command, payload))
-        .await
-        .map_err(|e| e.to_string())?
+impl NotifyQueue {
+    /// Kuyruğa ekler; yığın zamanlanmamışsa `true` döner (çağıran zamanlar).
+    pub fn push(&self, b: Bekleyen) -> bool {
+        self.pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(b);
+        !self.flush_scheduled.swap(true, Ordering::AcqRel)
+    }
+
+    /// Yığını alır; bayrak önce iner: bu arada gelen posta ya bu yığına
+    /// girer ya da yeni bir yığın kurar, hiçbiri kaybolmaz.
+    pub fn take(&self) -> Vec<Bekleyen> {
+        self.flush_scheduled.store(false, Ordering::Release);
+        std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()))
+    }
 }
 
 /// Yeni posta bildirimi: kısa bir süre toplanır, sonra tek çağrıyla
-/// (hesap başına grup) gösterilir.
-pub fn show(app: &AppHandle, ev: &NotifyEvent) {
-    // Masaüstünde geliştirme ikilisi: işletim sisteminin ortak bildirimi.
-    if !cfg!(target_os = "android") {
-        return mh_app::notify::native(app, ev);
-    }
-    let Some(queue) = app.try_state::<NotifyQueue>() else {
+/// (hesap başına grup) gösterilir. Köprü kurulu değilse (masaüstü) sessizce
+/// geçer; masaüstü ikilisi `Platform::notify`ta sistem bildirimine düşer.
+pub fn show(ev: &NotifyEvent, eylemler: Vec<String>) {
+    if !crate::kopru::kuruldu() {
         return;
+    }
+    if !QUEUE.push(Bekleyen {
+        ev: ev.clone(),
+        eylemler,
+    }) {
+        return;
+    }
+    let Some(rt) = crate::runtime() else {
+        return flush();
     };
-    queue
-        .pending
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(ev.clone());
-    if queue.flush_scheduled.swap(true, Ordering::AcqRel) {
+    rt.spawn(async {
+        tokio::time::sleep(BATCH).await;
+        // Köprü çağrısı Keystore'a dokunmaz ama Kotlin tarafında çalışır;
+        // eşzamansız iş parçacığını tutmasın.
+        let _ = tokio::task::spawn_blocking(flush).await;
+    });
+}
+
+fn flush() {
+    let batch = QUEUE.take();
+    if batch.is_empty() {
         return;
     }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(BATCH).await;
-        let Some(queue) = app.try_state::<NotifyQueue>() else {
-            return;
-        };
-        // Bayrak önce iner: bu arada gelen posta ya bu yığına girer ya da
-        // yeni bir yığın kurar; hiçbiri kaybolmaz.
-        queue.flush_scheduled.store(false, Ordering::Release);
-        let batch = std::mem::take(&mut *queue.pending.lock().unwrap_or_else(|e| e.into_inner()));
-        if batch.is_empty() {
-            return;
-        }
-        let groups = group(&batch);
-        if let Err(e) = plugin_call::<serde_json::Value>(
-            &app,
-            "postaBildir",
-            serde_json::json!({ "gruplar": groups }),
-        )
-        .await
-        {
-            tracing::warn!(error = %e, "sistem bildirimi gösterilemedi");
-        }
-    });
+    let groups = group(&batch);
+    if let Err(e) = crate::kopru::bildir(&serde_json::json!({ "gruplar": groups })) {
+        tracing::warn!(error = %e, "sistem bildirimi gösterilemedi");
+    }
 }
 
 /// Bildirim hâlâ yeni mi (bkz. [`is_new`]). Depo okunamazsa bildirim yerinde
@@ -216,65 +253,59 @@ fn is_new(summary: Option<&MessageSummary>, role: impl FnOnce() -> Option<Mailbo
     }
 }
 
-#[derive(Deserialize)]
-struct Active {
-    ids: Vec<MessageId>,
+/// Etkin bildirimlerden artık yeni olmayanlar.
+pub fn stale(state: &mh_app::AppState, active: Vec<MessageId>) -> Vec<MessageId> {
+    active
+        .into_iter()
+        .filter(|id| !still_new(state, *id))
+        .collect()
 }
 
 /// Okunan (bu cihazda ya da başka yerde), arşivlenen ya da silinen
 /// postaların bildirimlerini kaldırır. Sayaç değiştiğinde çağrılır; art arda
-/// gelen çağrılar tek denetimde birleşir.
-pub fn reconcile_soon(app: &AppHandle) {
-    if !cfg!(target_os = "android") {
+/// gelen çağrılar tek denetimde birleşir. Açık çekirdeğin deposuna bakar.
+pub fn reconcile_soon() {
+    if !crate::kopru::kuruldu() {
         return;
     }
-    let Some(queue) = app.try_state::<NotifyQueue>() else {
+    if QUEUE.reconcile_scheduled.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let Some(rt) = crate::runtime() else {
+        QUEUE.reconcile_scheduled.store(false, Ordering::Release);
         return;
     };
-    if queue.reconcile_scheduled.swap(true, Ordering::AcqRel) {
+    rt.spawn(async {
+        tokio::time::sleep(RECONCILE).await;
+        QUEUE.reconcile_scheduled.store(false, Ordering::Release);
+        let _ = tokio::task::spawn_blocking(reconcile).await;
+    });
+}
+
+fn reconcile() {
+    let active = match crate::kopru::etkin_bildirimler() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::debug!(error = %e, "etkin bildirimler okunamadı");
+            return;
+        }
+    };
+    if active.is_empty() {
         return;
     }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(RECONCILE).await;
-        if let Some(queue) = app.try_state::<NotifyQueue>() {
-            queue.reconcile_scheduled.store(false, Ordering::Release);
-        }
-        let active =
-            match plugin_call::<Active>(&app, "etkinBildirimler", serde_json::json!({})).await {
-                Ok(a) => a.ids,
-                Err(e) => {
-                    tracing::debug!(error = %e, "etkin bildirimler okunamadı");
-                    return;
-                }
-            };
-        if active.is_empty() {
-            return;
-        }
-        let Some(state) = app.try_state::<mh_app::AppState>() else {
-            return;
-        };
-        let stale: Vec<MessageId> = active
-            .into_iter()
-            .filter(|id| !still_new(&state, *id))
-            .collect();
-        if stale.is_empty() {
-            return;
-        }
-        tracing::debug!(
-            n = stale.len(),
-            "okunan postaların bildirimleri kaldırılıyor"
-        );
-        if let Err(e) = plugin_call::<serde_json::Value>(
-            &app,
-            "bildirimKaldir",
-            serde_json::json!({ "ids": stale }),
-        )
-        .await
-        {
-            tracing::warn!(error = %e, "bildirimler kaldırılamadı");
-        }
-    });
+    let Some(eski) = crate::cekirdek::with_state(|state| stale(state, active)) else {
+        return;
+    };
+    if eski.is_empty() {
+        return;
+    }
+    tracing::debug!(
+        n = eski.len(),
+        "okunan postaların bildirimleri kaldırılıyor"
+    );
+    if let Err(e) = crate::kopru::bildirim_kaldir(&eski) {
+        tracing::warn!(error = %e, "bildirimler kaldırılamadı");
+    }
 }
 
 /// İzin durumu kullanıcı ayarıyla birleşir: izin verilmiş olsa da uygulama ya
@@ -298,21 +329,13 @@ fn label(state: PermissionState) -> String {
 }
 
 /// Uygulama ve posta kanalı bildirimleri açık mı. Android dışında ya da
-/// eklenti yanıt vermezse açık sayılır (yalnız gösterge içindir).
-fn enabled(app: &AppHandle) -> bool {
-    #[derive(serde::Deserialize)]
-    struct Enabled {
-        enabled: bool,
-    }
+/// köprü yanıt vermezse açık sayılır (yalnız gösterge içindir).
+fn enabled() -> bool {
     if !cfg!(target_os = "android") {
         return true;
     }
-    match crate::plugin::call::<Enabled>(
-        app,
-        "notificationsEnabled",
-        serde_json::json!({ "channel": CHANNEL }),
-    ) {
-        Ok(e) => e.enabled,
+    match crate::kopru::bildirimler_acik(CHANNEL) {
+        Ok(e) => e,
         Err(e) => {
             tracing::warn!(error = %e, "bildirim ayarı okunamadı");
             true
@@ -334,7 +357,7 @@ fn permission_error(e: tauri_plugin_notification::Error) -> AppError {
 pub async fn notification_status(app: AppHandle) -> Res<String> {
     let state = tokio::task::spawn_blocking(move || {
         let state = app.notification().permission_state()?;
-        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled(&app)))
+        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled()))
     })
     .await
     .map_err(mh_app::state::internal)?
@@ -354,7 +377,7 @@ pub async fn notification_permission(app: AppHandle) -> Res<String> {
             PermissionState::Granted => PermissionState::Granted,
             _ => n.request_permission()?,
         };
-        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled(&app)))
+        Ok::<_, tauri_plugin_notification::Error>(effective(state, enabled()))
     })
     .await
     .map_err(mh_app::state::internal)?
@@ -426,6 +449,45 @@ pub(crate) mod tests {
             account_color: "#4655D4".into(),
             otp: None,
         }
+    }
+
+    fn bekleyen(id: MessageId, account: &str, name: &str, date: Millis) -> Bekleyen {
+        Bekleyen {
+            ev: olay(id, account, name, date),
+            eylemler: vec!["yanit".into(), "sil".into()],
+        }
+    }
+
+    fn ayar(actions: Vec<NotifyAction>) -> Settings {
+        let mut s: Settings = serde_json::from_value(serde_json::json!({})).expect("ayar");
+        s.notify_actions = actions;
+        s
+    }
+
+    #[test]
+    fn varsayilan_dugmeler_yanitla_sil_istenmeyen_sirayla() {
+        let s: Settings = serde_json::from_value(serde_json::json!({})).expect("ayar");
+        assert_eq!(
+            eylem_adlari(&s, true),
+            vec!["yanit", "sil", "istenmeyen"],
+            "varsayılan ayar üç düğme"
+        );
+        // İstenmeyen kutusu olmayan hesapta o düğme düşer, sıra korunur.
+        assert_eq!(eylem_adlari(&s, false), vec!["yanit", "sil"]);
+    }
+
+    #[test]
+    fn dugme_adlari_ayarin_sirasini_izler() {
+        let s = ayar(vec![
+            NotifyAction::Archive,
+            NotifyAction::MarkRead,
+            NotifyAction::Reply,
+        ]);
+        assert_eq!(eylem_adlari(&s, true), vec!["arsivle", "okundu", "yanit"]);
+        let bos = ayar(vec![]);
+        assert!(eylem_adlari(&bos, true).is_empty());
+        let bilinmeyen = ayar(vec![NotifyAction::Unknown, NotifyAction::Trash]);
+        assert_eq!(eylem_adlari(&bilinmeyen, true), vec!["sil"]);
     }
 
     #[test]
@@ -514,15 +576,16 @@ pub(crate) mod tests {
     #[test]
     fn yigin_hesaplara_bolunur_tekrar_yazilmaz_eskiden_yeniye() {
         let batch = vec![
-            olay(5, "is", "İş", 300),
-            olay(1, "ev", "Ev", 100),
-            olay(4, "is", "İş (yeni ad)", 200),
-            olay(5, "is", "İş (yeni ad)", 300),
+            bekleyen(5, "is", "İş", 300),
+            bekleyen(1, "ev", "Ev", 100),
+            bekleyen(4, "is", "İş (yeni ad)", 200),
+            bekleyen(5, "is", "İş (yeni ad)", 300),
         ];
         let groups = group(&batch);
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].hesap, "is");
         assert_eq!(groups[0].hesap_adi, "İş (yeni ad)");
+        assert_eq!(groups[0].eylemler, vec!["yanit", "sil"]);
         assert_eq!(
             groups[0].postalar.iter().map(|k| k.id).collect::<Vec<_>>(),
             vec![4, 5]
@@ -531,6 +594,25 @@ pub(crate) mod tests {
         assert_eq!(groups[1].postalar.len(), 1);
         let json = serde_json::to_value(&groups[1]).unwrap();
         assert_eq!(json["hesapAdi"], "Ev");
+        assert_eq!(json["eylemler"], serde_json::json!(["yanit", "sil"]));
         assert!(json["postalar"].is_array());
+    }
+
+    #[test]
+    fn kuyruk_ilk_eklemede_zamanlar_alinca_bosalir() {
+        let q = NotifyQueue::default();
+        assert!(q.push(bekleyen(1, "is", "İş", 1)));
+        assert!(!q.push(bekleyen(2, "is", "İş", 2)), "yığın zaten zamanlı");
+        let batch = q.take();
+        assert_eq!(batch.len(), 2);
+        assert!(q.take().is_empty());
+        assert!(q.push(bekleyen(3, "is", "İş", 3)), "yeni yığın");
+    }
+
+    #[test]
+    fn masaustunde_gosterme_sessizce_gecer() {
+        // Köprü yok: kuyruğa girmez, panik yok.
+        show(&olay(1, "is", "İş", 1), vec![]);
+        reconcile_soon();
     }
 }

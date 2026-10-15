@@ -20,16 +20,20 @@
     <string name="bildirim_okundu">Mark read</string>
     <string name="bildirim_arsivle">Archive</string>
     <string name="bildirim_yanitla">Reply</string>
+    <string name="bildirim_sil">Delete</string>
+    <string name="bildirim_istenmeyen">Spam</string>
     <string name="bildirim_yanit_ipucu">Your reply</string>
     <string name="bildirim_yanit_kuyrukta">Your reply is sent when the timer ends. Tap Undo to cancel.</string>
     <string name="bildirim_yanit_gidiyor">Sending your reply.</string>
     <string name="bildirim_geri_al">Undo</string>
     <string name="bildirim_yanit_geri_alindi">Reply cancelled; it was not sent.</string>
     <string name="bildirim_yanit_gec">The reply was already sent and can\'t be undone.</string>
-    <string name="bildirim_bekliyor">Will be applied when Mailhere opens. Tap to apply now.</string>
+    <string name="bildirim_bekliyor">Will be applied shortly, or when Mailhere opens. Tap to apply now.</string>
     <string name="bildirim_kaydedilemedi">This action couldn\'t be saved. Open the message in Mailhere and try again.</string>
     <string name="bildirim_hata">This action couldn\'t be done. Open the message in Mailhere and try again.</string>
     <string name="arka_baslik">Instant notifications on</string>
-    <string name="arka_metin">Connected to your inboxes; new mail arrives right away. Turn it off in Settings › Notifications.</string>
+    <string name="arka_metin">Connected to your inboxes; new mail arrives right away, even while the app is closed. Turn it off in Settings › Notifications.</string>
     <string name="arka_kapat">Turn off</string>
+    <string name="arka_yedek_baslik">Background connection unavailable</string>
+    <string name="arka_yedek_metin">Android didn\'t let Mailhere connect in the background. Mail is checked every 15 minutes; the instant connection returns when you open Mailhere.</string>
 </resources>

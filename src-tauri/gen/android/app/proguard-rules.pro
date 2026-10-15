@@ -22,3 +22,7 @@
 # Temiz oda denetimi (scripts/apk-denetle.sh): QR çözücünün zxing core olduğu
 # sürüm paketinde de görülsün. Yalnız sınıf adı korunur; kullanılmazsa silinir.
 -keepnames class com.google.zxing.qrcode.QRCodeReader
+# Etkinliksiz JNI köprüsü (src/kopru.rs): Rust statik yöntemleri adla
+# çağırır, Kotlin'in external yöntemleri .so içindeki Java_… sembollerine
+# bağlanır; R8 adları ve sınıfı korur.
+-keep class com.furkanyildirim.mailhere.plugin.ArkaKopru { *; }

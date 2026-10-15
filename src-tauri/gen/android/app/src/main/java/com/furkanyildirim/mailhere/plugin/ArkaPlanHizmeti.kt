@@ -67,8 +67,10 @@ class ArkaPlanHizmeti : Service() {
         }
         Bildirimler.yedekKaldir(this)
         ArkaPlan.alarmKur(this)
-        // Çekirdek yoksa etkinliksiz açılır (depo açılışı ana iş parçacığını tutmasın).
-        if (!ArkaKopru.cekirdekVar()) {
+        // Çekirdek yoksa ve etkinlik de yoksa etkinliksiz açılır (depo açılışı
+        // ana iş parçacığını tutmasın). Etkinlik varsa pencereli çekirdek
+        // kuruluyordur; kapı (cekirdek.rs) yine de Tauri'ye öncelik verir.
+        if (!Yasam.etkinlikVar && !ArkaKopru.cekirdekVar()) {
             Thread {
                 val kod = ArkaKopru.baslat()
                 Log.i(TAG, "etkinliksiz çekirdek: $kod")

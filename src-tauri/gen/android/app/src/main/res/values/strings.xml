@@ -8,4 +8,32 @@
     <string name="qr_torch_on">Feneri aç</string>
     <string name="qr_torch_off">Feneri kapat</string>
     <string name="qr_wrong">Bu bir Mailhere aktarım kodu değil</string>
+
+    <!-- Bildirimler (Bildirimler.kt, BildirimAlici.kt, ArkaPlanHizmeti.kt);
+         İngilizcesi values-en/strings.xml. -->
+    <string name="kanal_posta">Yeni posta</string>
+    <string name="kanal_posta_aciklama">Kişilerden gelen yeni postalar</string>
+    <string name="kanal_arka">Arka plan bağlantısı</string>
+    <string name="kanal_arka_aciklama">Anlık bildirim açıkken gelen kutularına bağlı kalındığını gösterir</string>
+    <string name="bildirim_konu_yok">(Konu yok)</string>
+    <string name="bildirim_yeni_posta">Yeni posta</string>
+    <plurals name="bildirim_ozet">
+        <item quantity="one">%d yeni posta</item>
+        <item quantity="other">%d yeni posta</item>
+    </plurals>
+    <string name="bildirim_okundu">Okundu</string>
+    <string name="bildirim_arsivle">Arşivle</string>
+    <string name="bildirim_yanitla">Yanıtla</string>
+    <string name="bildirim_yanit_ipucu">Yanıtın</string>
+    <string name="bildirim_yanit_kuyrukta">Yanıtın sayaç bitince gidecek. Vazgeçmek için Geri al.</string>
+    <string name="bildirim_yanit_gidiyor">Yanıtın gönderiliyor.</string>
+    <string name="bildirim_geri_al">Geri al</string>
+    <string name="bildirim_yanit_geri_alindi">Yanıt geri alındı; gönderilmedi.</string>
+    <string name="bildirim_yanit_gec">Yanıt zaten gönderildi; geri alınamadı.</string>
+    <string name="bildirim_bekliyor">Mailhere açılınca uygulanacak. Hemen uygulamak için dokun.</string>
+    <string name="bildirim_kaydedilemedi">Bu işlem kaydedilemedi. Postayı Mailhere\'de açıp yeniden dene.</string>
+    <string name="bildirim_hata">Bu işlem yapılamadı. Postayı Mailhere\'de açıp yeniden dene.</string>
+    <string name="arka_baslik">Anlık bildirim açık</string>
+    <string name="arka_metin">Gelen kutularına bağlı; yeni posta anında gelir. Ayarlar › Bildirimler\'den kapatabilirsin.</string>
+    <string name="arka_kapat">Kapat</string>
 </resources>

@@ -9,3 +9,8 @@ notification_settings
 notification_status
 qr_scan
 system_bars
+battery_status
+battery_settings
+background_mode_get
+background_mode_set
+haptic

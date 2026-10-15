@@ -2481,6 +2481,7 @@ dependencies = [
 name = "mailhere-android"
 version = "0.5.1"
 dependencies = [
+ "chrono",
  "mh-app",
  "mh-core",
  "mh-mime",

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "main",
-  "description": "Tek pencere (Android): tüm uygulama komutları (QR aktarım dahil), dış bağlantı, sistem bildirimi.",
+  "description": "Tek pencere (Android): tüm uygulama komutları (QR aktarım dahil), dış bağlantı, sistem bildirimi, bildirim sağlığı (pil, anlık bildirim), dokunsal geri bildirim.",
   "platforms": ["android"],
   "windows": ["main"],
   "permissions": [
@@ -88,6 +88,11 @@
     "allow-notification-settings",
     "allow-notification-status",
     "allow-qr-scan",
-    "allow-system-bars"
+    "allow-system-bars",
+    "allow-battery-status",
+    "allow-battery-settings",
+    "allow-background-mode-get",
+    "allow-background-mode-set",
+    "allow-haptic"
   ]
 }

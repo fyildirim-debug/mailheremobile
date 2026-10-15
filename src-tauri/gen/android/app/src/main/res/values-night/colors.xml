@@ -2,4 +2,6 @@
 <resources>
     <!-- Gece: koyu temanın ground jetonu. -->
     <color name="zemin">#0F1115</color>
+    <!-- Bildirim simgesi ve uygulama adı rengi: temanın accent jetonu. -->
+    <color name="vurgu">#8C96F6</color>
 </resources>

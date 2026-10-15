@@ -1,5 +1,7 @@
 //! Mailhere Android kabuğu: tek pencere, Android anahtar kasası köprüsü,
-//! sistem bildirimi, dosya seçme / kaydetme / paylaşma, QR tarayıcı
+//! sistem bildirimi (gruplu, eylemli; bildirimden Okundu / Arşivle / Yanıtla),
+//! bildirim sağlığı (pil kısıtlaması, isteğe bağlı anlık bildirim hizmeti),
+//! dokunsal geri bildirim, dosya seçme / kaydetme / paylaşma, QR tarayıcı
 //! (bilgisayardan aktarım). Komutlar ve çekirdek ortak katmanda (`mh-app`,
 //! alt modül `mailhere/`).
 //!
@@ -7,8 +9,11 @@
 //! ile başlar. Aynı kabuk masaüstünde geliştirme için ikili olarak da açılır
 //! (`src/main.rs`); orada anahtar kasası yoktur, parolalar bellekte tutulur.
 
+pub mod arka;
 pub mod bars;
+pub mod eylem;
 pub mod files;
+pub mod haptic;
 pub mod keystore;
 pub mod notify;
 pub mod platform;
@@ -21,6 +26,7 @@ use mh_app::routes::is_app_url;
 use mh_app::state::memory_mode;
 use mh_app::Dirs;
 use mh_sync::{MemorySecrets, SecretStore};
+use tauri::webview::PageLoadEvent;
 use tauri::{App, AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::platform::AndroidPlatform;
@@ -58,7 +64,8 @@ fn dev_host(app: &AppHandle) -> Option<String> {
 
 /// Ana pencere: tek sayfa, yönlendirme bekçili (posta içindeki bağlantı ya da
 /// bir betik pencereyi uygulama dışı adrese götüremez; dış bağlantılar
-/// tarayıcıya gider).
+/// tarayıcıya gider). Sayfa yüklenince bildirimden açılması beklenen posta
+/// açılır (`eylem::page_loaded`).
 pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(MAIN) {
         return Ok(w);
@@ -71,6 +78,11 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                 tracing::warn!(scheme = url.scheme(), host = ?url.host_str(), "uygulama dışı adrese yönlendirme engellendi");
             }
             ok
+        })
+        .on_page_load(|w, p| {
+            if p.event() == PageLoadEvent::Finished {
+                eylem::page_loaded(w.app_handle());
+            }
         })
         .title("Mailhere")
         .build()
@@ -93,6 +105,9 @@ fn setup(app: &mut App, rt: tokio::runtime::Handle) -> Result<(), Box<dyn std::e
         return Ok(());
     }
     notify::setup(&handle);
+    // Bildirim eylemleri (süreç kapalıyken biriken dahil) pencereden önce
+    // bağlanır; açılacak posta sayfa yüklenince açılır.
+    eylem::setup(&handle);
     create_main(&handle)?;
     Ok(())
 }
@@ -132,6 +147,11 @@ pub fn run() {
             notify::notification_status,
             qr::qr_scan,
             bars::system_bars,
+            arka::battery_status,
+            arka::battery_settings,
+            arka::background_mode_get,
+            arka::background_mode_set,
+            haptic::haptic,
         ])
         .run(tauri::generate_context!())
         .expect("Mailhere başlatılamadı");

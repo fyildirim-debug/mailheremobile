@@ -1,4 +1,5 @@
-//! Android kabuğunun `Platform` uygulaması: sistem bildirimi, tek pencere
+//! Android kabuğunun `Platform` uygulaması: sistem bildirimi (hesap başına
+//! gruplu, eylemli; `notify.rs`), tek pencere
 //! (hızlı okuma ve yazma aynı pencerede açılır), sistemin dosya seçici ve
 //! kaydet penceresi, `FileProvider` ile açma / paylaşma, açılış hatası.
 
@@ -21,8 +22,12 @@ impl Platform for AndroidPlatform {
         crate::notify::show(app, &ev);
     }
 
-    /// Android'de tepsi ya da rozet yok; sayacı arayüz `mh:changed` ile yeniler.
-    fn counts_changed(&self, _app: &AppHandle) {}
+    /// Android'de tepsi ya da rozet yok; sayacı arayüz `mh:changed` ile
+    /// yeniler. Okunan, taşınan ya da silinen postaların bildirimleri burada
+    /// kalkar (başka cihazda okunanlar dahil).
+    fn counts_changed(&self, app: &AppHandle) {
+        crate::notify::reconcile_soon(app);
+    }
 
     /// Kart penceresi yok; sessize alma bildirim kararında uygulanır.
     fn muted(&self, _app: &AppHandle) {}

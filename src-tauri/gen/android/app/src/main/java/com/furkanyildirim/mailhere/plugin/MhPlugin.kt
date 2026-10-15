@@ -1,12 +1,16 @@
 package com.furkanyildirim.mailhere.plugin
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import androidx.activity.result.ActivityResult
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
@@ -16,8 +20,11 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.furkanyildirim.mailhere.R
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -55,6 +62,64 @@ class FileArgs {
     var mime: String? = null
 }
 
+/** `src/notify.rs` → `Kart`. */
+@InvokeArg
+class KartArgs {
+    var id: Long = 0
+    var gonderen: String = ""
+    var konu: String = ""
+    var onizleme: String = ""
+    var zaman: Long = 0
+}
+
+/** `src/notify.rs` → `HesapGrubu`. */
+@InvokeArg
+class GrupArgs {
+    var hesap: String = ""
+    var hesapAdi: String = ""
+    var postalar: List<KartArgs> = listOf()
+}
+
+@InvokeArg
+class PostaBildirArgs {
+    var gruplar: List<GrupArgs> = listOf()
+}
+
+@InvokeArg
+class IdlerArgs {
+    var ids: List<Long> = listOf()
+}
+
+@InvokeArg
+class HataArgs {
+    var id: Long = 0
+    var metin: String = ""
+}
+
+@InvokeArg
+class YanitArgs {
+    var id: Long = 0
+    var kuyruk: String = ""
+    var gonderim: Long = 0
+    var metin: String = ""
+}
+
+@InvokeArg
+class GeriAlArgs {
+    var id: Long = 0
+    var iptal: Boolean = false
+}
+
+@InvokeArg
+class ModArgs {
+    var acik: Boolean = false
+}
+
+@InvokeArg
+class HaptikArgs {
+    var kind: String = ""
+}
+
 /**
  * Mailhere'nin uygulama içi eklentisi; yalnız Rust tarafından çağrılır
  * (`mh-android`, `src/plugin.rs`). Arayüzden erişilen komutu yoktur.
@@ -69,10 +134,46 @@ class FileArgs {
  * - `notificationsEnabled`: uygulamanın ve posta kanalının bildirimleri açık mı
  *   (izin verilmiş olsa da kullanıcı sistem ayarlarından kapatmış olabilir).
  * - `openNotificationSettings`: Mailhere'nin sistem bildirim ayarları.
+ * - Yeni posta bildirimleri ([Bildirimler]): `postaBildir`, `bildirimKaldir`,
+ *   `bildirimHata`, `yanitKuyrukta`, `yanitGeriAlindi`, `etkinBildirimler`.
+ *   Bildirim eylemleri ve dokunuşlar Rust'a `bildirim` olayıyla gider
+ *   (`src/eylem.rs` kanalı kaydeder); süreç kapalıyken birikenler ve soğuk
+ *   açılıştaki dokunuş `bekleyenEylemler` ile alınır.
+ * - Bildirim sağlığı: `pilDurumu`, `pilAyarlari`, `arkaPlanDurumu`,
+ *   `arkaPlanAyarla` ([ArkaPlan]).
+ * - `haptic`: dokunsal geri bildirim (sistem ayarına uyar).
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
     private val vault by lazy { SecretVault(activity) }
+    private val ctx: Context = activity.applicationContext
+
+    /** Soğuk açılışta dokunulan bildirimin postası (Rust dinlemeye başlayınca alınır). */
+    private var acilacak: Long? = null
+
+    init {
+        ornek = this
+        Bildirimler.kanallar(ctx)
+        bildirimdenAc(activity.intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        bildirimdenAc(intent)
+    }
+
+    /** Bildirime dokunuldu: bildirim kalkar, posta açılır (Rust `mh:open`). */
+    private fun bildirimdenAc(intent: Intent?) {
+        if (intent?.action != Bildirimler.EYLEM_AC) return
+        val id = intent.getLongExtra(Bildirimler.E_ID, -1)
+        if (id < 0) return
+        // Aynı niyet (ör. yapılandırma değişikliği) ikinci kez işlenmesin.
+        intent.action = null
+        Bildirimler.dokunuldu(ctx, id, intent.getStringExtra(Bildirimler.E_HESAP))
+        if (!ilet(JSObject().put("tur", "ac").put("id", id))) {
+            synchronized(this) { acilacak = id }
+        }
+    }
 
     /**
      * Kasa işleri (donanım kasasında AES-GCM, `SharedPreferences.commit()`)
@@ -269,6 +370,191 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    @Command
+    fun postaBildir(invoke: Invoke) {
+        val args = invoke.parseArgs(PostaBildirArgs::class.java)
+        for (g in args.gruplar) {
+            val postalar = g.postalar.map {
+                Posta(it.id, g.hesap, g.hesapAdi, it.gonderen, it.konu, it.onizleme, it.zaman)
+            }
+            Bildirimler.postaGoster(ctx, g.hesap, g.hesapAdi, postalar)
+        }
+        invoke.resolve()
+    }
+
+    @Command
+    fun bildirimKaldir(invoke: Invoke) {
+        val args = invoke.parseArgs(IdlerArgs::class.java)
+        Bildirimler.kaldir(ctx, args.ids)
+        invoke.resolve()
+    }
+
+    @Command
+    fun bildirimHata(invoke: Invoke) {
+        val args = invoke.parseArgs(HataArgs::class.java)
+        val metin = args.metin.ifBlank { ctx.getString(R.string.bildirim_hata) }
+        Bildirimler.hata(ctx, args.id, metin)
+        invoke.resolve()
+    }
+
+    @Command
+    fun yanitKuyrukta(invoke: Invoke) {
+        val args = invoke.parseArgs(YanitArgs::class.java)
+        Bildirimler.yanitKuyrukta(ctx, args.id, args.kuyruk, args.gonderim, args.metin)
+        invoke.resolve()
+    }
+
+    @Command
+    fun yanitGeriAlindi(invoke: Invoke) {
+        val args = invoke.parseArgs(GeriAlArgs::class.java)
+        Bildirimler.yanitGeriAlindi(ctx, args.id, args.iptal)
+        invoke.resolve()
+    }
+
+    /** Hâlâ "yeni posta" durumundaki bildirimler: `{ ids: number[] }`. */
+    @Command
+    fun etkinBildirimler(invoke: Invoke) {
+        val result = JSObject()
+        result.put("ids", JSArray(Bildirimler.etkinPostalar(ctx)))
+        invoke.resolve(result)
+    }
+
+    /**
+     * Süreç kapalıyken alınan eylemler (kasadan; alınınca silinir) ve soğuk
+     * açılışta dokunulan bildirim: `{ eylemler: object[] }`.
+     */
+    @Command
+    fun bekleyenEylemler(invoke: Invoke) {
+        kasaIsi.execute {
+            val eylemler = try {
+                Bekleyenler.bosalt(ctx)
+            } catch (e: Exception) {
+                JSONArray()
+            }
+            synchronized(this) {
+                acilacak?.let { eylemler.put(JSObject().put("tur", "ac").put("id", it)) }
+                acilacak = null
+            }
+            val result = JSObject()
+            result.put("eylemler", eylemler)
+            invoke.resolve(result)
+        }
+    }
+
+    /**
+     * Pil kısıtlaması: `unrestricted` (optimizasyondan muaf), `optimized`
+     * (varsayılan) ya da `restricted` (kullanıcı "Kısıtlı" seçmiş; Android 9+).
+     */
+    @Command
+    fun pilDurumu(invoke: Invoke) {
+        val result = JSObject()
+        result.put("durum", pilKisiti())
+        invoke.resolve(result)
+    }
+
+    private fun pilKisiti(): String {
+        val am = ctx.getSystemService(ActivityManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && am?.isBackgroundRestricted == true) {
+            return "restricted"
+        }
+        val pm = ctx.getSystemService(PowerManager::class.java)
+        return if (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true) "unrestricted" else "optimized"
+    }
+
+    /**
+     * Kısıtlamayı kaldırma: "Kısıtlı"ysa uygulamanın ayar sayfası (pil
+     * kullanımı oradan "Kısıtlamasız" yapılır), değilse sistemin "pil
+     * optimizasyonunu yok say" isteği; açılamazsa optimizasyon listesi.
+     * Kullanıcı dönünce çözülür.
+     */
+    @Command
+    fun pilAyarlari(invoke: Invoke) {
+        val paket = Uri.fromParts("package", ctx.packageName, null)
+        val adaylar = if (pilKisiti() == "optimized") {
+            listOf(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, paket),
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, paket),
+            )
+        } else {
+            listOf(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, paket))
+        }
+        activity.runOnUiThread {
+            for (intent in adaylar) {
+                try {
+                    startActivityForResult(invoke, intent, "pilSonuc")
+                    return@runOnUiThread
+                } catch (e: ActivityNotFoundException) {
+                    // Sıradaki sayfa denenir.
+                } catch (e: SecurityException) {
+                    // Sıradaki sayfa denenir.
+                }
+            }
+            invoke.reject("Pil ayarları açılamadı")
+        }
+    }
+
+    @ActivityCallback
+    fun pilSonuc(invoke: Invoke, result: ActivityResult) {
+        invoke.resolve()
+    }
+
+    /** Anlık bildirim açık mı: `{ acik: boolean }`. */
+    @Command
+    fun arkaPlanDurumu(invoke: Invoke) {
+        val result = JSObject()
+        result.put("acik", ArkaPlan.acik(ctx))
+        invoke.resolve(result)
+    }
+
+    /** Anlık bildirimi açar/kapatır; açılışta hizmet hemen başlar. */
+    @Command
+    fun arkaPlanAyarla(invoke: Invoke) {
+        val args = invoke.parseArgs(ModArgs::class.java)
+        try {
+            ArkaPlan.ayarla(ctx, args.acik)
+            val result = JSObject()
+            result.put("acik", ArkaPlan.acik(ctx))
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            invoke.reject("anlık bildirim başlatılamadı")
+        }
+    }
+
+    /**
+     * Dokunsal geri bildirim: `tick` (kaydırma eşiği), `confirm`, `reject`.
+     * Sistem "dokunma geri bildirimi" ayarına uyar (bayrak verilmez).
+     */
+    @Command
+    fun haptic(invoke: Invoke) {
+        val args = invoke.parseArgs(HaptikArgs::class.java)
+        val sabit = when (args.kind) {
+            "tick" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE
+            } else {
+                HapticFeedbackConstants.CLOCK_TICK
+            }
+            "confirm" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                HapticFeedbackConstants.CONFIRM
+            } else {
+                HapticFeedbackConstants.VIRTUAL_KEY
+            }
+            "reject" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                HapticFeedbackConstants.REJECT
+            } else {
+                HapticFeedbackConstants.LONG_PRESS
+            }
+            else -> {
+                invoke.reject("bilinmeyen dokunuş türü")
+                return
+            }
+        }
+        activity.runOnUiThread {
+            activity.window?.decorView?.performHapticFeedback(sabit)
+        }
+        invoke.resolve()
+    }
+
     private fun start(intent: Intent) {
         activity.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
@@ -291,6 +577,25 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         const val EKLER = "ekler"
+
+        /** Rust'a giden olay (`src/eylem.rs` → `EVENT`). */
+        const val OLAY = "bildirim"
+
+        /** Süreçteki eklenti (alıcı ve hizmet buradan Rust'a ulaşır). */
+        @Volatile
+        var ornek: MhPlugin? = null
+            private set
+
+        /**
+         * Olayı Rust'a iletir; çekirdek dinlemiyorsa (süreç yeni açıldı ya da
+         * kurulum sürüyor) `false`.
+         */
+        fun ilet(olay: JSObject): Boolean {
+            val p = ornek ?: return false
+            if (!p.hasListener(OLAY)) return false
+            p.trigger(OLAY, olay)
+            return true
+        }
 
         /** `scanQr` ret iletileri (`src/qr.rs` ile aynı). */
         const val HATA_IZIN = "kamera-izni"

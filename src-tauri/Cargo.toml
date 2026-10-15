@@ -26,6 +26,8 @@ mh-app = { path = "../mailhere/crates/mh-app" }
 mh-core = { path = "../mailhere/crates/mh-core" }
 mh-sync = { path = "../mailhere/crates/mh-sync" }
 mh-mime = { path = "../mailhere/crates/mh-mime" }
+# Yanıt alıntısının tarihi (bildirimden yanıt; sürüm mailhere ile aynı).
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "sync"] }

@@ -5,4 +5,31 @@
     <string name="qr_torch_on">Turn on flashlight</string>
     <string name="qr_torch_off">Turn off flashlight</string>
     <string name="qr_wrong">This isn\'t a Mailhere transfer code</string>
+
+    <!-- Notifications (Bildirimler.kt, BildirimAlici.kt, ArkaPlanHizmeti.kt). -->
+    <string name="kanal_posta">New mail</string>
+    <string name="kanal_posta_aciklama">New mail from people</string>
+    <string name="kanal_arka">Background connection</string>
+    <string name="kanal_arka_aciklama">Shows that Mailhere stays connected to your inboxes while instant notifications are on</string>
+    <string name="bildirim_konu_yok">(No subject)</string>
+    <string name="bildirim_yeni_posta">New mail</string>
+    <plurals name="bildirim_ozet">
+        <item quantity="one">%d new message</item>
+        <item quantity="other">%d new messages</item>
+    </plurals>
+    <string name="bildirim_okundu">Mark read</string>
+    <string name="bildirim_arsivle">Archive</string>
+    <string name="bildirim_yanitla">Reply</string>
+    <string name="bildirim_yanit_ipucu">Your reply</string>
+    <string name="bildirim_yanit_kuyrukta">Your reply is sent when the timer ends. Tap Undo to cancel.</string>
+    <string name="bildirim_yanit_gidiyor">Sending your reply.</string>
+    <string name="bildirim_geri_al">Undo</string>
+    <string name="bildirim_yanit_geri_alindi">Reply cancelled; it was not sent.</string>
+    <string name="bildirim_yanit_gec">The reply was already sent and can\'t be undone.</string>
+    <string name="bildirim_bekliyor">Will be applied when Mailhere opens. Tap to apply now.</string>
+    <string name="bildirim_kaydedilemedi">This action couldn\'t be saved. Open the message in Mailhere and try again.</string>
+    <string name="bildirim_hata">This action couldn\'t be done. Open the message in Mailhere and try again.</string>
+    <string name="arka_baslik">Instant notifications on</string>
+    <string name="arka_metin">Connected to your inboxes; new mail arrives right away. Turn it off in Settings › Notifications.</string>
+    <string name="arka_kapat">Turn off</string>
 </resources>

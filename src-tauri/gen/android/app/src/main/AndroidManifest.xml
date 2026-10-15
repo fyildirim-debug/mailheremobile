@@ -4,10 +4,18 @@
     <!-- Ağ, (Android 13+) bildirim ve yalnız QR tarayıcı için kamera izni;
          kamera izni çalışma anında, tarama ekranında istenir. Bildirim
          eklentisinin kitaplık bildiriminden gelen açılışta çalışma ve uyanık
-         tutma izinleri kullanılmaz; birleştirmede atılır. -->
+         tutma izinleri kullanılmaz; birleştirmede atılır (Rust çekirdeği
+         etkinliksiz başlatılamaz; açılışta başlatılacak bir şey yok). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- İsteğe bağlı "Anlık bildirim": süreci arka planda canlı tutan ön plan
+         hizmeti (tür specialUse; dataSync Android 15'te 24 saatte 6 saatle
+         sınırlı) ve kullanıcı açıklamayı okuyup dokununca istenen pil
+         optimizasyonu muafiyeti (Ayarlar › Bildirimler). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Kamerasız cihazda da kurulur: aktarım kodu yapıştırılabilir. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
@@ -57,6 +65,26 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/ekler_yollari" />
         </provider>
+
+        <!-- Bildirim düğmeleri (Okundu, Arşivle, Yanıtla, Geri al), kaydırıp
+             kapatma, anlık bildirimin "Kapat" düğmesi ve uyanma alarmı;
+             niyetler yalnız bu uygulamanın bildirimlerinden gelir. -->
+        <receiver
+            android:name=".plugin.BildirimAlici"
+            android:exported="false" />
+
+        <!-- "Anlık bildirim" açıkken süreci canlı tutar (IMAP IDLE / JMAP
+             anlık bildirim Rust çekirdeğinde). Görev kaydırılıp kapatılınca
+             durur: çekirdek etkinlikle yaşar. -->
+        <service
+            android:name=".plugin.ArkaPlanHizmeti"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="true">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Kullanıcının açtığı sürekli e-posta bağlantısı (IMAP IDLE / JMAP anlık bildirim): yeni posta, sunucu bildirir bildirmez cihazda üretilen bildirimle haber verilir; aracı sunucu ya da Google Play Hizmetleri yoktur." />
+        </service>
 
         <!-- Zamanlanmış bildirim kullanılmaz; açılışta geri yükleme alıcısı gereksiz. -->
         <receiver android:name="app.tauri.notification.LocalNotificationRestoreReceiver" tools:node="remove" />

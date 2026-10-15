@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "mailhere-android"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "mh-app",
@@ -2555,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "mh-app"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2584,7 +2584,7 @@ dependencies = [
 
 [[package]]
 name = "mh-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "mh-jmap"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "futures",
@@ -2613,7 +2613,7 @@ dependencies = [
 
 [[package]]
 name = "mh-mime"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ammonia",
  "base64 0.22.1",
@@ -2625,7 +2625,7 @@ dependencies = [
 
 [[package]]
 name = "mh-notify"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "mh-core",
  "windows-sys 0.61.2",
@@ -2634,7 +2634,7 @@ dependencies = [
 
 [[package]]
 name = "mh-oauth"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64 0.22.1",
  "mh-core",
@@ -2649,7 +2649,7 @@ dependencies = [
 
 [[package]]
 name = "mh-send"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "lettre",
  "mh-core",
@@ -2667,7 +2667,7 @@ dependencies = [
 
 [[package]]
 name = "mh-store"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "mail-builder",
@@ -2683,7 +2683,7 @@ dependencies = [
 
 [[package]]
 name = "mh-sync"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-imap",
  "base64 0.22.1",
@@ -2709,7 +2709,7 @@ dependencies = [
 
 [[package]]
 name = "mh-transfer"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64 0.22.1",
  "if-addrs",

@@ -35,6 +35,8 @@
     "allow-open-main",
     "allow-open-compose",
     "allow-notify-snooze",
+    "allow-notify-action",
+    "allow-notify-reply",
     "allow-jmap-discover",
     "allow-account-add-jmap",
     "allow-account-update",

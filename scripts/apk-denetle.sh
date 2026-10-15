@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # APK denetimi: paket adı, izinler, minSdk, ABI, bildirim öznitelikleri,
 # QR tarayıcı (kamera isteğe bağlı, etkinlik dışa kapalı, Play Hizmetleri /
-# ML Kit yok) ve .so dosyasının 16 KB sayfa hizası. CI ve yerelde aynı betik.
+# ML Kit yok), bildirim alıcısı ve anlık bildirim hizmeti (dışa kapalı,
+# specialUse, görevle durur), R8 sonrası eklenti komutları ve .so dosyasının
+# 16 KB sayfa hizası. CI ve yerelde aynı betik.
 #
 #   scripts/apk-denetle.sh <apk> [--debug]
 #
@@ -35,9 +37,14 @@ echo "$BADGING" | grep -q "^application-label:'Mailhere'" || sorun "uygulama ad�
 # Uygulamanın kendi tanımladığı imza düzeyi izni (androidx.core, dışa açık
 # olmayan alıcılar için) sistem izni değildir; sayılmaz.
 IZINLER="$(echo "$BADGING" | sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" | grep -v '^com.furkanyildirim.mailhere.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION$' | sort)"
-BEKLENEN="$(printf '%s\n' android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.CAMERA | sort)"
+# Anlık bildirim (isteğe bağlı): ön plan hizmeti (specialUse) ve kullanıcı
+# dokununca istenen pil optimizasyonu muafiyeti. Açılışta çalışma
+# (RECEIVE_BOOT_COMPLETED), uyanık tutma (WAKE_LOCK) ve kesin alarm yok.
+BEKLENEN="$(printf '%s\n' android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.CAMERA \
+  android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE \
+  android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | sort)"
 if [ "$IZINLER" != "$BEKLENEN" ]; then
-  sorun "izinler yalnız INTERNET, POST_NOTIFICATIONS ve CAMERA olmalı; bulunan: $(echo "$IZINLER" | tr '\n' ' ')"
+  sorun "izinler yalnız INTERNET, POST_NOTIFICATIONS, CAMERA, FOREGROUND_SERVICE(_SPECIAL_USE) ve REQUEST_IGNORE_BATTERY_OPTIMIZATIONS olmalı; bulunan: $(echo "$IZINLER" | tr '\n' ' ')"
 fi
 # Kamera yalnız QR tarayıcı için; kamerasız cihazlarda da kurulabilmeli
 # (badging satırı feature-group altında girintilidir).
@@ -53,6 +60,22 @@ echo "$MANIFEST" | grep -q 'LocalNotificationRestoreReceiver' && sorun "açılı
 QR="$(echo "$MANIFEST" | awk '/^ *E: / { if (blok ~ /QrScanActivity/) print blok; blok = "" } { blok = blok "\n" $0 } END { if (blok ~ /QrScanActivity/) print blok }')"
 echo "$MANIFEST" | grep -q 'com.furkanyildirim.mailhere.plugin.QrScanActivity' || sorun "QrScanActivity manifestte yok"
 echo "$QR" | grep -q 'android:exported.*=false' || sorun "QrScanActivity exported=false değil"
+# Bir öğenin (E: satırından sonraki öznitelikler) bloğu.
+blok() {
+  echo "$MANIFEST" | awk -v ad="$1" '/^ *E: / { if (b ~ ad) print b; b = "" } { b = b "\n" $0 } END { if (b ~ ad) print b }'
+}
+# Bildirim düğmeleri alıcısı ve anlık bildirim hizmeti dışa kapalı; hizmet
+# specialUse türünde (alt tür beyanıyla) ve görev kapanınca durur.
+ALICI="$(blok 'plugin.BildirimAlici')"
+[ -n "$ALICI" ] || sorun "BildirimAlici manifestte yok"
+echo "$ALICI" | grep -q 'android:exported.*=false' || sorun "BildirimAlici exported=false değil"
+echo "$ALICI" | grep -q 'intent-filter' && sorun "BildirimAlici niyet süzgeci taşımamalı"
+HIZMET="$(blok 'plugin.ArkaPlanHizmeti')"
+[ -n "$HIZMET" ] || sorun "ArkaPlanHizmeti manifestte yok"
+echo "$HIZMET" | grep -q 'android:exported.*=false' || sorun "ArkaPlanHizmeti exported=false değil"
+echo "$HIZMET" | grep -q 'android:foregroundServiceType.*=0x40000000' || sorun "ArkaPlanHizmeti türü specialUse değil"
+echo "$HIZMET" | grep -q 'android:stopWithTask.*=true' || sorun "ArkaPlanHizmeti stopWithTask=true değil"
+echo "$MANIFEST" | grep -q 'PROPERTY_SPECIAL_USE_FGS_SUBTYPE' || sorun "specialUse alt tür beyanı yok"
 if [ "$DEBUG" = 1 ]; then
   echo "$MANIFEST" | grep -q 'android:usesCleartextTraffic.*=true' || echo "Not: geliştirme paketinde usesCleartextTraffic beklenirdi"
 else
@@ -68,6 +91,14 @@ if grep -l -a -E 'Lcom/google/(android/gms|mlkit)/' "$TMP"/dex/classes*.dex > /d
   sorun "dex'te Google Play Hizmetleri ya da ML Kit sınıfı var"
 fi
 grep -l -a 'Lcom/google/zxing/qrcode/QRCodeReader;' "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te zxing QRCodeReader yok"
+# R8 sonrası: Rust'ın adla çağırdığı eklenti komutları ve manifestteki
+# bileşenler küçültmeden sağ çıkmış olmalı (Tauri @Command kuralı korur).
+for ad in Lcom/furkanyildirim/mailhere/plugin/MhPlugin\; Lcom/furkanyildirim/mailhere/plugin/BildirimAlici\; \
+  Lcom/furkanyildirim/mailhere/plugin/ArkaPlanHizmeti\; postaBildir bildirimKaldir bildirimHata yanitKuyrukta \
+  yanitGeriAlindi etkinBildirimler bekleyenEylemler pilDurumu pilAyarlari arkaPlanDurumu arkaPlanAyarla haptic \
+  registerListener; do
+  grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok (R8 sildi mi?)"
+done
 
 # 16 KB sayfa hizası (Android 15+): her LOAD bölütü en az 2**14 hizalı.
 unzip -q -o "$APK" 'lib/arm64-v8a/*.so' -d "$TMP"

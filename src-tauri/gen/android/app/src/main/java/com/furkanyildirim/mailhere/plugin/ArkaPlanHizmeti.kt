@@ -11,30 +11,37 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import app.tauri.plugin.JSObject
 
 /**
- * "Anlık bildirim" (isteğe bağlı): süreci arka planda canlı tutan ön plan
- * hizmeti. Kendi işi yoktur; IMAP IDLE ve JMAP anlık bildirim bağlantıları
- * Rust çekirdeğinde zaten çalışır. Hizmet yalnız şunları sağlar:
+ * "Anlık bildirim" (varsayılan açık): süreci arka planda canlı tutan ön plan
+ * hizmeti ve etkinlik yokken Rust çekirdeğinin sahibi.
  *
  * - Süreç "ön plan hizmeti" önceliğinde kalır: önbellek kipinde dondurulmaz,
  *   bellek baskısında ve üretici uyutucularında sona kalır, Doze'da ağ
- *   kesilmez.
+ *   kesilmez. IMAP IDLE ve JMAP akışı Rust çekirdeğinde sürer.
+ * - Görev son uygulamalardan kaydırılınca durmaz (`stopWithTask=false`):
+ *   etkinlik yok edilir ama Rust çıkışı engeller (`lib.rs`), pencereli çekirdek
+ *   çalışmaya devam eder, yeni posta bildirilir, düğmeler çalışır.
+ * - Süreçte çekirdek yoksa (telefon yeniden başladı, sistem süreci öldürüp
+ *   hizmeti yeniden kurdu, bildirim düğmesi hizmeti başlattı) hizmet
+ *   etkinliksiz çekirdeği açar ([ArkaKopru.cekirdekBaslat]): aynı eşitleme,
+ *   aynı bildirimler, aynı düğmeler; pencere yok. Etkinlik gelince Rust
+ *   onu kapatıp pencereli çekirdeği açar (süreç başına tek çekirdek).
  * - 15 dakikada bir Doze'da da çalışan kesin olmayan alarm ([ArkaPlan.uyan]):
- *   cihaz uyanır, çekirdek bağlantıları bir eşitlemeyle sınar (yarı ölü TCP,
- *   NAT zaman aşımı); yayın kilidi 8 sn tutulur.
+ *   çekirdek bağlantıları bir eşitlemeyle sınar (yarı ölü TCP, NAT zaman
+ *   aşımı); yayın kilidi 8 sn tutulur.
  *
  * Tür `specialUse` (Android 14+): `dataSync` Android 15'te 24 saatte 6 saatle
- * sınırlıdır ve süre dolunca hizmet durdurulur; sürekli posta bağlantısına
- * uymaz. `stopWithTask`: görev son uygulamalardan kaydırılınca hizmet durur
- * (etkinlik yok edilince Tauri süreci zaten kapatır; Rust çekirdeği
- * etkinliksiz yaşayamaz). `START_NOT_STICKY`: sistem süreci öldürürse hizmet
- * çekirdeksiz yeniden doğmaz; uygulama açılınca yeniden başlar.
+ * sınırlıdır ve açılıştan başlatılamaz; sürekli posta bağlantısına uymaz.
+ * `START_STICKY`: sistem süreci öldürürse hizmet yeniden doğar ve çekirdeği
+ * etkinliksiz açar. Arka plandan başlatma (Android 12+) yalnız izinli
+ * yollarla denenir; izin yoksa yoklama işi ([ArkaPlanIsi]) yedektir.
  */
 class ArkaPlanHizmeti : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -54,16 +61,40 @@ class ArkaPlanHizmeti : Service() {
                 startForeground(Bildirimler.ID_ARKA, bildirim)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "anlık bildirim hizmeti başlatılamadı")
+            Log.w(TAG, "anlık bildirim hizmeti başlatılamadı: ${e.javaClass.simpleName}")
             stopSelf()
             return START_NOT_STICKY
         }
+        Bildirimler.yedekKaldir(this)
         ArkaPlan.alarmKur(this)
-        return START_NOT_STICKY
+        // Çekirdek yoksa etkinliksiz açılır (depo açılışı ana iş parçacığını tutmasın).
+        if (!ArkaKopru.cekirdekVar()) {
+            Thread {
+                val kod = ArkaKopru.baslat()
+                Log.i(TAG, "etkinliksiz çekirdek: $kod")
+            }.start()
+        }
+        return START_STICKY
     }
 
+    /**
+     * Hizmet durdu (kullanıcı kapattı). Etkinlik yoksa arka plan işi de
+     * biter: etkinliksiz çekirdek kapatılır; pencereli çekirdek etkinliksiz
+     * yaşıyorsa süreç sonlandırılır (kapalıyken kaydırma zaten çıkardı).
+     */
     override fun onDestroy() {
         ArkaPlan.alarmKaldir(this)
+        if (!Yasam.etkinlikVar) {
+            when (ArkaKopru.durum()) {
+                // Kapatma birkaç saniye sürebilir; ana iş parçacığını tutmasın.
+                ArkaKopru.DURUM_BASLIKSIZ -> Thread { ArkaKopru.durdur() }.start()
+                ArkaKopru.DURUM_TAURI -> {
+                    super.onDestroy()
+                    Process.killProcess(Process.myPid())
+                    return
+                }
+            }
+        }
         super.onDestroy()
     }
 
@@ -88,7 +119,8 @@ object ArkaPlan {
     private fun tercih(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(TERCIH, Context.MODE_PRIVATE)
 
-    fun acik(ctx: Context): Boolean = tercih(ctx).getBoolean(ACIK, false)
+    /** Kullanıcı hiç seçmediyse açık; kapattıysa kapalı kalır. */
+    fun acik(ctx: Context): Boolean = tercih(ctx).getBoolean(ACIK, true)
 
     /**
      * Ayarı yazar; açıksa hizmeti başlatır. Uygulama ekrandayken çağrılır
@@ -109,13 +141,22 @@ object ArkaPlan {
         }
     }
 
-    /** Açıksa hizmeti başlatır (etkinlik ekrana gelince). */
-    fun baslatGerekirse(ctx: Context) {
-        if (!acik(ctx)) return
-        try {
+    /**
+     * Açıksa ve bildirim izni varsa hizmeti başlatır (etkinlik ekrana gelince,
+     * açılışta, bildirim düğmesinden, yoklama işinden). Android izin vermezse
+     * `false`; [aciklamaGoster] ile kullanıcıya yedek yoklamanın çalıştığı
+     * sessiz bir bildirimle söylenir.
+     */
+    fun baslatGerekirse(ctx: Context, aciklamaGoster: Boolean = false): Boolean {
+        if (!acik(ctx)) return false
+        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
+        return try {
             baslat(ctx)
+            true
         } catch (e: Exception) {
-            Log.w(TAG, "anlık bildirim hizmeti başlatılamadı")
+            Log.w(TAG, "anlık bildirim hizmeti başlatılamadı: ${e.javaClass.simpleName}")
+            if (aciklamaGoster) Bildirimler.yedekGoster(ctx)
+            false
         }
     }
 
@@ -152,10 +193,11 @@ object ArkaPlan {
     /**
      * Alarm geldi: çekirdek çalışıyorsa bağlantıları sınaması istenir ve
      * yayın kilidi kısa süre tutulur (cihaz eşitleme bitmeden uyumasın);
-     * sonraki alarm kurulur. Çekirdek yoksa zincir biter.
+     * sonraki alarm kurulur. Çekirdek yoksa zincir biter; yoklama işi
+     * yedektir.
      */
     fun uyan(ctx: Context, sonuc: BroadcastReceiver.PendingResult) {
-        if (!acik(ctx) || !MhPlugin.ilet(JSObject().put("tur", "uyan"))) {
+        if (!acik(ctx) || !ArkaKopru.esitleGuvenli()) {
             sonuc.finish()
             return
         }

@@ -62,7 +62,13 @@ data class Posta(
  */
 object Bildirimler {
     const val KANAL_POSTA = "yeni-posta"
-    const val KANAL_ARKA = "arka-plan"
+    /**
+     * Ön plan hizmetinin kanalı: en düşük önem (durum çubuğunda simge yok,
+     * bildirim panelinin en altında katlı). Kanal önemi oluşturulduktan sonra
+     * değiştirilemediğinden yeni kimlik; eski (düşük önemli) kanal silinir.
+     */
+    const val KANAL_ARKA = "arka-plan-sessiz"
+    private const val KANAL_ARKA_ESKI = "arka-plan"
 
     /** Ön plan hizmetinin (anlık bildirim) kalıcı bildirimi; etiketsiz. */
     const val ID_ARKA = 7
@@ -125,7 +131,7 @@ object Bildirimler {
     const val EYLEM_ARKA_KAPAT = "com.furkanyildirim.mailhere.ARKA_KAPAT"
     const val EYLEM_UYAN = "com.furkanyildirim.mailhere.UYAN"
 
-    /** Kanallar: yeni posta (yüksek) ve arka plan bağlantısı (düşük, sessiz). */
+    /** Kanallar: yeni posta (yüksek) ve arka plan bağlantısı (en düşük, sessiz, simgesiz). */
     fun kanallar(ctx: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
@@ -139,7 +145,7 @@ object Bildirimler {
         val arka = NotificationChannel(
             KANAL_ARKA,
             ctx.getString(R.string.kanal_arka),
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_MIN,
         ).apply {
             description = ctx.getString(R.string.kanal_arka_aciklama)
             setShowBadge(false)
@@ -149,6 +155,13 @@ object Bildirimler {
         // Var olan kanalın yalnız adı ve açıklaması güncellenir; kullanıcının
         // seçtiği önem ve ses korunur.
         nm.createNotificationChannels(listOf(posta, arka))
+        // Eski kanalda ön plan hizmeti bildirimi varken Android silmeye izin
+        // vermez (yalnız önceki sürümün sürecinde olur); sonraki açılışta silinir.
+        try {
+            nm.deleteNotificationChannel(KANAL_ARKA_ESKI)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "eski arka plan kanalı silinemedi")
+        }
     }
 
     /** Bir hesabın yeni postaları (eskiden yeniye) ve özeti. */
@@ -483,7 +496,7 @@ object Bildirimler {
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(uygulamaNiyeti(ctx))
             .addAction(
@@ -516,7 +529,7 @@ object Bildirimler {
             .setSilent(true)
             .setShowWhen(false)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setContentIntent(uygulamaNiyeti(ctx))
             .build()

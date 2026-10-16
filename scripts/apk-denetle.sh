@@ -132,11 +132,14 @@ for ad in Lcom/furkanyildirim/mailhere/plugin/MhPlugin\; Lcom/furkanyildirim/mai
   Lcom/furkanyildirim/mailhere/plugin/ArkaPlanHizmeti\; Lcom/furkanyildirim/mailhere/plugin/ArkaPlanIsi\; \
   Lcom/furkanyildirim/mailhere/plugin/BootAlici\; Lcom/furkanyildirim/mailhere/plugin/ArkaKopru\; \
   Lcom/furkanyildirim/mailhere/MailhereApp\; Lcom/furkanyildirim/mailhere/YenidenBaslatActivity\; \
-  pilDurumu pilAyarlari arkaPlanDurumu arkaPlanAyarla haptic openNotificationSettings \
+  pilDurumu pilAyarlari arkaPlanDurumu arkaPlanAyarla acilisDurumu acilisAyarla haptic openNotificationSettings \
   kasaOku kasaYaz kasaSil yanitKuyrukta yanitGeriAlindi bildirimlerAcik bekleyenler anlikAcik \
   cekirdekBaslat cekirdekDurdur cekirdekDurumu tekSefer; do
   grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok (R8 sildi mi?)"
 done
+# Ön plan hizmetinin kanalı en düşük önemle yeni kimlikte (durum çubuğunda
+# simge yok); kanal önemi sonradan değişmediği için eski kimlik silinir.
+grep -l -a -F 'arka-plan-sessiz' "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te arka plan kanalı arka-plan-sessiz yok"
 
 # 16 KB sayfa hizası (Android 15+): her LOAD bölütü en az 2**14 hizalı.
 unzip -q -o "$APK" 'lib/arm64-v8a/*.so' -d "$TMP"

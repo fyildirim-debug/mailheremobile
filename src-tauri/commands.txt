@@ -14,3 +14,5 @@ battery_settings
 background_mode_get
 background_mode_set
 haptic
+autostart_get
+autostart_set

@@ -14,7 +14,7 @@
     <string name="kanal_posta">Yeni posta</string>
     <string name="kanal_posta_aciklama">Kişilerden gelen yeni postalar</string>
     <string name="kanal_arka">Arka plan bağlantısı</string>
-    <string name="kanal_arka_aciklama">Anlık bildirim açıkken gelen kutularına bağlı kalındığını gösterir</string>
+    <string name="kanal_arka_aciklama">Anlık bildirim açıkken gelen kutularına bağlı kalındığını gösterir; durum çubuğunda simge göstermez, bildirim panelinin en altında katlı durur</string>
     <string name="bildirim_konu_yok">(Konu yok)</string>
     <string name="bildirim_yeni_posta">Yeni posta</string>
     <plurals name="bildirim_ozet">

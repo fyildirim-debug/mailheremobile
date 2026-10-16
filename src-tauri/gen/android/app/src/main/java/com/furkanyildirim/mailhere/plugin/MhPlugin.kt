@@ -69,6 +69,7 @@ class HaptikArgs {
  * - `openNotificationSettings`: Mailhere'nin sistem bildirim ayarları.
  * - Bildirim sağlığı: `pilDurumu`, `pilAyarlari`, `arkaPlanDurumu`,
  *   `arkaPlanAyarla` ([ArkaPlan]).
+ * - Açılışta başlama: `acilisDurumu`, `acilisAyarla` ([ArkaPlan.acilistaBaslar]).
  * - `haptic`: dokunsal geri bildirim (sistem ayarına uyar).
  *
  * Bildirime dokunuş etkinliğe gelir ([bildirimdenAc]) ve `ArkaKopru.eylem`
@@ -307,6 +308,27 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("anlık bildirim başlatılamadı")
         }
+    }
+
+    /** Açılışta başlama açık mı: `{ acik: boolean }` (seçilmemişse açık). */
+    @Command
+    fun acilisDurumu(invoke: Invoke) {
+        val result = JSObject()
+        result.put("acik", ArkaPlan.acilistaBaslar(ctx))
+        invoke.resolve(result)
+    }
+
+    /** Açılışta başlamayı açar/kapatır (yalnız ayar; hizmete dokunmaz). */
+    @Command
+    fun acilisAyarla(invoke: Invoke) {
+        val args = invoke.parseArgs(ModArgs::class.java)
+        if (!ArkaPlan.acilisAyarla(ctx, args.acik)) {
+            invoke.reject("açılış ayarı yazılamadı")
+            return
+        }
+        val result = JSObject()
+        result.put("acik", ArkaPlan.acilistaBaslar(ctx))
+        invoke.resolve(result)
     }
 
     /**

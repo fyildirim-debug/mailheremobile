@@ -3,9 +3,10 @@
 //! ya da kullanıcının seçtiği düğmeler), arka planda süren çekirdek (anlık
 //! bildirim: pencere kapansa da süreç yaşar; etkinliksiz çekirdek: telefon
 //! yeniden başlayınca hizmet pencere açılmadan eşitler ve bildirir), bildirim
-//! sağlığı (pil kısıtlaması), dokunsal geri bildirim, dosya seçme / kaydetme
-//! / paylaşma, QR tarayıcı (bilgisayardan aktarım). Komutlar ve çekirdek
-//! ortak katmanda (`mh-app`, alt modül `mailhere/`).
+//! sağlığı (pil kısıtlaması), açılışta başlama ayarı, dokunsal geri
+//! bildirim, dosya seçme / kaydetme / paylaşma, QR tarayıcı (bilgisayardan
+//! aktarım). Komutlar ve çekirdek ortak katmanda (`mh-app`, alt modül
+//! `mailhere/`).
 //!
 //! Gradle `libmailhere_lib.so`yu yükler; etkinlik açılınca [`run`]
 //! `tauri::mobile_entry_point` ile başlar, etkinlik yokken Kotlin `ArkaKopru`
@@ -14,6 +15,7 @@
 //! geliştirme için ikili olarak da açılır (`src/main.rs`); orada anahtar
 //! kasası yoktur, parolalar bellekte tutulur.
 
+pub mod acilis;
 pub mod arka;
 pub mod bars;
 pub mod cekirdek;
@@ -216,6 +218,8 @@ pub fn run() {
             arka::background_mode_get,
             arka::background_mode_set,
             haptic::haptic,
+            acilis::autostart_get,
+            acilis::autostart_set,
         ])
         .build(tauri::generate_context!());
     let app = match app {
@@ -262,9 +266,21 @@ mod tests {
         names(include_str!("../commands.txt"))
     }
 
-    /// Masaüstü kabuğunun komutları; Android yetenek dosyasında bunlara izin yoktur.
+    /// İki kabukta aynı adla, kabuğa özgü gövdeyle tanımlı komutlar (ortak
+    /// listede değil; arayüz aynı adı çağırır).
+    const BOTH_SHELLS: &[&str] = &["autostart_get", "autostart_set"];
+
+    /// Masaüstü kabuğunun komutları; Android yetenek dosyasında bunlara izin
+    /// yoktur (iki kabukta aynı adlı olanlar hariç).
     fn desktop_commands() -> Vec<&'static str> {
         names(include_str!("../../mailhere/src-tauri/commands.txt"))
+    }
+
+    fn desktop_only() -> Vec<&'static str> {
+        desktop_commands()
+            .into_iter()
+            .filter(|n| !BOTH_SHELLS.contains(n))
+            .collect()
     }
 
     fn capability() -> serde_json::Value {
@@ -296,7 +312,7 @@ mod tests {
                 "{name}: hem ortak hem Android listesinde"
             );
             assert!(
-                !desktop_commands().contains(name),
+                !desktop_only().contains(name),
                 "{name}: masaüstü kabuğunun komutuyla aynı ad"
             );
             // Ad `shared_commands!` çağrısına `modül::ad,` biçiminde eklenmiş olmalı.
@@ -329,10 +345,24 @@ mod tests {
     #[test]
     fn masaustune_ozel_izin_yok() {
         let allowed = allowed();
-        for name in desktop_commands() {
+        for name in desktop_only() {
             assert!(
                 !allowed.contains(name),
                 "allow-{name}: masaüstüne özel komut Android yetenek dosyasında"
+            );
+        }
+    }
+
+    #[test]
+    fn iki_kabukta_ayni_adli_komutlar_android_listesinde() {
+        for name in BOTH_SHELLS {
+            assert!(
+                mobile_commands().contains(name),
+                "{name}: Android commands.txt'de yok"
+            );
+            assert!(
+                !mh_app::SHARED_COMMANDS.contains(name),
+                "{name}: ortak listede; kabuğa özgü olmalı"
             );
         }
     }

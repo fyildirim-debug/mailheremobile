@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "main",
-  "description": "Tek pencere (Android): tüm uygulama komutları (QR aktarım dahil), dış bağlantı, sistem bildirimi, bildirim sağlığı (pil, anlık bildirim), dokunsal geri bildirim.",
+  "description": "Tek pencere (Android): tüm uygulama komutları (QR aktarım dahil), dış bağlantı, sistem bildirimi, bildirim sağlığı (pil, anlık bildirim), açılışta başlama, dokunsal geri bildirim.",
   "platforms": ["android"],
   "windows": ["main"],
   "permissions": [
@@ -95,6 +95,8 @@
     "allow-battery-settings",
     "allow-background-mode-get",
     "allow-background-mode-set",
+    "allow-autostart-get",
+    "allow-autostart-set",
     "allow-haptic"
   ]
 }

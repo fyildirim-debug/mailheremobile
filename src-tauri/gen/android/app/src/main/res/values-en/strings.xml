@@ -10,7 +10,7 @@
     <string name="kanal_posta">New mail</string>
     <string name="kanal_posta_aciklama">New mail from people</string>
     <string name="kanal_arka">Background connection</string>
-    <string name="kanal_arka_aciklama">Shows that Mailhere stays connected to your inboxes while instant notifications are on</string>
+    <string name="kanal_arka_aciklama">Shows that Mailhere stays connected to your inboxes while instant notifications are on; no status bar icon, collapsed at the bottom of the shade</string>
     <string name="bildirim_konu_yok">(No subject)</string>
     <string name="bildirim_yeni_posta">New mail</string>
     <plurals name="bildirim_ozet">

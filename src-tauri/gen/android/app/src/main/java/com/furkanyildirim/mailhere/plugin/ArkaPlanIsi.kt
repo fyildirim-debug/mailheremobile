@@ -18,6 +18,8 @@ import androidx.core.app.NotificationManagerCompat
  *    tetikler ve eşitleme bitene dek işin uyanıklığını tutar.
  * 2. Çekirdek yoksa (sistem süreci öldürdü, açılışta hizmet başlatılamadı)
  *    hizmeti başlatmayı dener; başarırsa hizmet uzun süreli çekirdeği açar.
+ *    "Açılışta başlat" kapalıysa denemez (iş açılıştan sonra da çalışır;
+ *    hizmeti telefon açılınca kendiliğinden kurmasın), 3. adıma geçer.
  * 3. Android arka plandan hizmet başlatmaya izin vermezse (12+; alarm ve iş
  *    muaf değildir) tek seferlik eşitle-bildir yapar: etkinliksiz çekirdek
  *    açılır, tüm hesaplar bir kez eşitlenir, yeni posta aynı bildirim yoluyla
@@ -46,7 +48,7 @@ class ArkaPlanIsi : JobService() {
 
     private fun calis() {
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        if (!ArkaKopru.cekirdekVar() && ArkaPlan.baslatGerekirse(this)) {
+        if (!ArkaKopru.cekirdekVar() && ArkaPlan.acilistaBaslar(this) && ArkaPlan.baslatGerekirse(this)) {
             // Hizmet çekirdeği uzun süreli açıyor; iş bitti.
             return
         }

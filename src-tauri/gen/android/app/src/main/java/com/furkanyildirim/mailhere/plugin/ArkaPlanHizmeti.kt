@@ -110,10 +110,14 @@ class ArkaPlanHizmeti : Service() {
     }
 }
 
-/** Anlık bildirim ayarı (uygulamaya özel tercih dosyası) ve hizmet denetimi. */
+/**
+ * Anlık bildirim ve açılışta başlama ayarları (uygulamaya özel tercih
+ * dosyası) ve hizmet denetimi.
+ */
 object ArkaPlan {
     private const val TERCIH = "mailhere-arka-plan"
     private const val ACIK = "anlik"
+    private const val ACILIS = "acilis"
     private const val ARALIK = 15 * 60 * 1000L
     private const val UYANIK = 8_000L
     private const val TAG = "Mailhere"
@@ -123,6 +127,18 @@ object ArkaPlan {
 
     /** Kullanıcı hiç seçmediyse açık; kapattıysa kapalı kalır. */
     fun acik(ctx: Context): Boolean = tercih(ctx).getBoolean(ACIK, true)
+
+    /**
+     * "Açılışta başlat" (Ayarlar › Genel): telefon açılınca [BootAlici]
+     * hizmeti ve yoklama işini kursun mu. Kullanıcı hiç seçmediyse açık.
+     * Kapalıyken açılışta hiçbir şey başlatılmaz; uygulama açılınca anlık
+     * bildirim ve yoklama her zamanki gibi çalışır.
+     */
+    fun acilistaBaslar(ctx: Context): Boolean = tercih(ctx).getBoolean(ACILIS, true)
+
+    /** Açılışta başlamayı yazar (eşzamanlı; açılış alıcısı hemen okuyabilsin). */
+    fun acilisAyarla(ctx: Context, acik: Boolean): Boolean =
+        tercih(ctx).edit().putBoolean(ACILIS, acik).commit()
 
     /**
      * Ayarı yazar; açıksa hizmeti başlatır. Uygulama ekrandayken çağrılır

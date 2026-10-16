@@ -34,7 +34,7 @@ fn unsupported() -> AppError {
 }
 
 /// Eklenti çağrısı ana iş parçacığını bekler; çalışma iş parçacığını tutmasın.
-async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
+pub(crate) async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
     app: AppHandle,
     command: &'static str,
     payload: serde_json::Value,

@@ -97,6 +97,14 @@
     "allow-background-mode-set",
     "allow-autostart-get",
     "allow-autostart-set",
-    "allow-haptic"
+    "allow-haptic",
+    "allow-lock-status",
+    "allow-lock-enable",
+    "allow-lock-disable",
+    "allow-lock-change",
+    "allow-lock-unlock",
+    "allow-lock-ui-lock",
+    "allow-lock-set-relock",
+    "allow-lock-reset-local"
   ]
 }

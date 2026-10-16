@@ -38,6 +38,8 @@ object ArkaKopru {
     const val KOD_HESAP_YOK = 4
     const val KOD_HATA = 5
     const val KOD_VAZGECILDI = 6
+    /** Parola kilidi açık: çekirdek yalnız uygulamada parola girilince açılır. */
+    const val KOD_KILITLI = 7
 
     /** `cekirdekDurumu` (Rust `cekirdek::Durum`). */
     const val DURUM_YOK = 0
@@ -203,6 +205,12 @@ object ArkaKopru {
 
     /** "Anlık bildirim" açık mı (seçilmemişse açık). */
     @JvmStatic fun anlikAcik(ctx: Context): Boolean = ArkaPlan.acik(ctx)
+
+    /** Parola kilidi açıkken çekirdek açılamadı: sessiz "Mailhere kilitli" bildirimi. */
+    @JvmStatic fun kilitliGoster(ctx: Context) = Bildirimler.kilitliGoster(ctx)
+
+    /** Kilit açıldı: bildirim kalkar. */
+    @JvmStatic fun kilitliKaldir(ctx: Context) = Bildirimler.kilitliKaldir(ctx)
 
     private fun metinler(a: JSONArray?): List<String> {
         if (a == null) return emptyList()

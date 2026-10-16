@@ -57,6 +57,8 @@ pub const KOTLIN_YONTEMLER: &[(&str, &str)] = &[
         "(Landroid/content/Context;)Ljava/lang/String;",
     ),
     ("anlikAcik", "(Landroid/content/Context;)Z"),
+    ("kilitliGoster", "(Landroid/content/Context;)V"),
+    ("kilitliKaldir", "(Landroid/content/Context;)V"),
 ];
 
 /// Rust'ın dışa verdiği JNI giriş noktaları (Kotlin `external fun` adları).
@@ -571,6 +573,40 @@ pub fn bildirimler_acik(kanal: &str) -> Result<bool, String> {
     }
 }
 
+/// Context alan, değer dönmeyen yöntemler.
+#[cfg(target_os = "android")]
+fn yalin(ad: &str) -> Result<(), String> {
+    android::with_env(|env, ctx, sinif| {
+        android::statik(env, sinif, ad, &[JValue::Object(ctx)])?;
+        Ok(())
+    })
+}
+
+/// Parola kilidi açıkken etkinliksiz çekirdek açılamadı: sessiz "Mailhere
+/// kilitli — postaları almak için bir kez aç" bildirimi.
+pub fn kilitli_goster() -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        yalin("kilitliGoster")
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err(yalniz_android())
+    }
+}
+
+/// Kilit açıldı (pencereli çekirdek başladı): bildirim kalkar.
+pub fn kilitli_kaldir() -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        yalin("kilitliKaldir")
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err(yalniz_android())
+    }
+}
+
 /// "Anlık bildirim" açık mı (Kotlin tercihi; seçilmemişse açık).
 pub fn anlik_acik() -> Result<bool, String> {
     #[cfg(target_os = "android")]
@@ -656,5 +692,7 @@ mod tests {
         assert!(kasa_oku("x").is_err());
         assert!(bildir(&serde_json::json!({})).is_err());
         assert!(anlik_acik().is_err());
+        assert!(kilitli_goster().is_err());
+        assert!(kilitli_kaldir().is_err());
     }
 }

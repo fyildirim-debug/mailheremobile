@@ -33,7 +33,7 @@ use std::sync::{Arc, OnceLock};
 
 use mh_app::routes::is_app_url;
 use mh_app::state::memory_mode;
-use mh_app::Dirs;
+use mh_app::{Dirs, Platform};
 use mh_sync::{MemorySecrets, SecretStore};
 use tauri::webview::PageLoadEvent;
 use tauri::{App, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -128,40 +128,41 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 
 fn setup(app: &mut App, rt: tokio::runtime::Handle) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
-    // Süreçte etkinliksiz çekirdek çalışıyorsa (hizmet açılışta başlattı) ya
-    // da açılıyorsa yerini pencereli çekirdeğe bırakır (tek çekirdek).
-    cekirdek::tauri_kuruluyor();
     // Tanıtım ve deneme kipi: parolalar ve veritabanı anahtarı bellekte.
     let memory = memory_mode();
     let secrets: Arc<dyn SecretStore> = if memory {
         tracing::info!("parolalar ve veritabanı anahtarı bellekte (tanıtım ya da test kipi)");
         Arc::new(MemorySecrets::new())
     } else {
-        match keystore::AndroidKeystoreSecrets::new() {
-            Ok(s) => Arc::new(s),
-            Err(e) => {
-                cekirdek::tauri_vazgec();
-                return Err(e);
+        Arc::new(keystore::AndroidKeystoreSecrets::new()?)
+    };
+    let dirs = Dirs::resolve(memory, || os_dirs(&handle))?;
+    let platform = Arc::new(AndroidPlatform);
+    let boot = mh_app::lock::Boot {
+        rt,
+        dirs,
+        secrets,
+        platform: platform.clone(),
+        kdf: mh_app::lock::KdfParams::MOBILE,
+    };
+    // Parola kilidi açıksa çekirdek parola girilene kadar açılmaz: pencere
+    // kilit ekranını gösterir, `lock_unlock` çekirdeği başlatır. Çekirdek
+    // kapısı (etkinliksiz çekirdeği durdurma, hazır bildirimi, bekleyen
+    // eylemler) `AndroidPlatform::core_starting/core_ready` ile iki yolda da
+    // aynı sırayla çalışır.
+    match mh_app::lock::prepare(&handle, boot) {
+        Ok(Some(boot)) => {
+            // Hata iletişim kutusu gösterildi; pencere açılmaz, kutu kapanınca çıkılır.
+            if mh_app::setup_core(&handle, boot, None).is_err() {
+                return Ok(());
             }
         }
-    };
-    let dirs = match Dirs::resolve(memory, || os_dirs(&handle)) {
-        Ok(d) => d,
+        Ok(None) => tracing::info!("parola kilidi: çekirdek parola bekliyor"),
         Err(e) => {
-            cekirdek::tauri_vazgec();
-            return Err(e);
+            platform.fatal(&handle, &e);
+            return Ok(());
         }
-    };
-    let platform = Arc::new(AndroidPlatform);
-    // Hata iletişim kutusu gösterildi; pencere açılmaz, kutu kapanınca çıkılır.
-    if mh_app::setup_core(app, rt, dirs, secrets, platform).is_err() {
-        cekirdek::tauri_vazgec();
-        return Ok(());
     }
-    cekirdek::tauri_hazir(handle.clone());
-    // Bildirim eylemleri (süreç kapalıyken biriken dahil) pencereden önce
-    // uygulanır; açılacak posta sayfa yüklenince açılır.
-    eylem::setup(&handle);
     create_main(&handle)?;
     Ok(())
 }
@@ -204,8 +205,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(plugin::init())
         .setup(move |app| setup(app, rt.clone()))
-        // Ortak komutlar + yalnız Android komutları (`commands.txt`).
-        .invoke_handler(mh_app::shared_commands![
+        // Ortak komutlar + yalnız Android komutları (`commands.txt`);
+        // kilitliyken `lock_*` dışındakiler kapıda reddedilir.
+        .invoke_handler(mh_app::lock::gate(mh_app::shared_commands![
             files::attachment_share,
             files::attachment_save,
             notify::notification_permission,
@@ -220,7 +222,7 @@ pub fn run() {
             haptic::haptic,
             acilis::autostart_get,
             acilis::autostart_set,
-        ])
+        ]))
         .build(tauri::generate_context!());
     let app = match app {
         Ok(app) => app,

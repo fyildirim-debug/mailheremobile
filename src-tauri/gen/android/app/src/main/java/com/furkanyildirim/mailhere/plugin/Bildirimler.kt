@@ -76,6 +76,15 @@ object Bildirimler {
     /** Arka plandan hizmet başlatılamadı: yedek (yoklama) açıklaması; etiketsiz. */
     const val ID_YEDEK = 8
 
+    /**
+     * Parola kilidi: telefon yeniden başladı ama anahtar parolayla sarılı,
+     * çekirdek açılamıyor; "Mailhere kilitli — postaları almak için bir kez
+     * aç". Kendi sessiz kanalı (varsayılan önem, ses yok); dokununca uygulama
+     * (kilit ekranı). Kilit açılınca kalkar.
+     */
+    const val KANAL_KILIT = "kilit"
+    const val ID_KILIT = 9
+
     private const val ETIKET_POSTA = "posta:"
     private const val ETIKET_OZET = "ozet:"
     private const val GRUP = "mailhere:"
@@ -538,6 +547,55 @@ object Bildirimler {
 
     fun yedekKaldir(ctx: Context) {
         NotificationManagerCompat.from(ctx).cancel(ID_YEDEK)
+    }
+
+    /** Kilit kanalı: durum çubuğunda görünür ama ses ve titreşim yok. */
+    private fun kilitKanali(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        val kanal = NotificationChannel(
+            KANAL_KILIT,
+            ctx.getString(R.string.kanal_kilit),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = ctx.getString(R.string.kanal_kilit_aciklama)
+            setShowBadge(false)
+            setSound(null, null)
+            enableVibration(false)
+        }
+        nm.createNotificationChannel(kanal)
+    }
+
+    /**
+     * Parola kilidi açıkken etkinliksiz çekirdek açılamadı (yeniden başlatma,
+     * hizmetin yeniden kurulması, yoklama işi): sessiz, kalıcı olmayan bildirim;
+     * aynı kimlikle yeniden gösterim yalnız günceller (`setOnlyAlertOnce`).
+     * Dokununca uygulama açılır ve kilit ekranı gelir.
+     */
+    fun kilitliGoster(ctx: Context) {
+        kilitKanali(ctx)
+        val metin = ctx.getString(R.string.kilit_metin)
+        val n = NotificationCompat.Builder(ctx, KANAL_KILIT)
+            .setSmallIcon(R.drawable.ic_bildirim)
+            .setColor(vurgu(ctx))
+            .setContentTitle(ctx.getString(R.string.kilit_baslik))
+            .setContentText(metin)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(metin))
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(uygulamaNiyeti(ctx))
+            .build()
+        gonder(ctx, null, n, ID_KILIT)
+    }
+
+    /** Kilit açıldı (pencereli çekirdek başladı). */
+    fun kilitliKaldir(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(ID_KILIT)
     }
 
     /** Postayı açan niyet (tek pencere; `singleTask` etkinliğe `onNewIntent`). */

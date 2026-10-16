@@ -35,5 +35,9 @@
     <string name="arka_metin">Connected to your inboxes; new mail arrives right away, even while the app is closed. Turn it off in Settings › Notifications.</string>
     <string name="arka_kapat">Turn off</string>
     <string name="arka_yedek_baslik">Background connection unavailable</string>
+    <string name="kanal_kilit">Password lock</string>
+    <string name="kanal_kilit_aciklama">Tells you that Mailhere is waiting for your password to fetch mail while the password lock is on</string>
+    <string name="kilit_baslik">Mailhere is locked</string>
+    <string name="kilit_metin">Open Mailhere once and enter your password to fetch mail. Once unlocked, notifications continue in the background.</string>
     <string name="arka_yedek_metin">Android didn\'t let Mailhere connect in the background. Mail is checked every 15 minutes; the instant connection returns when you open Mailhere.</string>
 </resources>

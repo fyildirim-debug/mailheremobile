@@ -39,5 +39,9 @@
     <string name="arka_metin">Gelen kutularına bağlı; yeni posta uygulama kapalıyken de anında gelir. Ayarlar › Bildirimler\'den kapatabilirsin.</string>
     <string name="arka_kapat">Kapat</string>
     <string name="arka_yedek_baslik">Arka plan bağlantısı kurulamadı</string>
+    <string name="kanal_kilit">Parola kilidi</string>
+    <string name="kanal_kilit_aciklama">Parola kilidi açıkken Mailhere\'nin postaları almak için parola beklediğini söyler</string>
+    <string name="kilit_baslik">Mailhere kilitli</string>
+    <string name="kilit_metin">Postaları almak için Mailhere\'yi bir kez açıp parolanı gir. Kilit açılınca bildirimler arka planda sürer.</string>
     <string name="arka_yedek_metin">Android, Mailhere\'nin arka planda bağlanmasına izin vermedi. Posta 15 dakikada bir denetlenecek; Mailhere\'yi açınca anlık bağlantı geri gelir.</string>
 </resources>

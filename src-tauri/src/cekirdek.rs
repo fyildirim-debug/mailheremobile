@@ -77,6 +77,10 @@ pub enum Baslatma {
     /// Kurulum bitince Tauri çekirdeğinin kurulduğu görüldü; etkinliksiz
     /// çekirdek hiç başlatılmadan kapatıldı.
     Vazgecildi,
+    /// Parola kilidi açık: anahtar parolayla sarılı, çekirdek yalnız
+    /// uygulamadan parola girilince açılır. "Mailhere kilitli" bildirimi
+    /// gösterildi; hizmet ve iş başka bir şey yapmaz.
+    Kilitli,
 }
 
 impl Baslatma {
@@ -89,6 +93,7 @@ impl Baslatma {
             Baslatma::HesapYok => 4,
             Baslatma::Hata => 5,
             Baslatma::Vazgecildi => 6,
+            Baslatma::Kilitli => 7,
         }
     }
 }
@@ -323,6 +328,11 @@ fn ac() -> Result<Arc<Headless>, Baslatma> {
     })?);
     match Headless::open(&dirs, secrets, Arc::new(AndroidKabuk)) {
         Ok(h) => Ok(h),
+        Err(e) if e.code == mh_core::ErrorCode::Locked => {
+            tracing::info!("etkinliksiz çekirdek: parola kilidi açık, çekirdek açılmadı");
+            kilitli_bildir();
+            Err(Baslatma::Kilitli)
+        }
         Err(e) if e.code == mh_core::ErrorCode::Keyring => {
             tracing::warn!(error = %e.message, "etkinliksiz çekirdek açılmadı");
             Err(Baslatma::AnahtarYok)
@@ -334,8 +344,19 @@ fn ac() -> Result<Arc<Headless>, Baslatma> {
     }
 }
 
+/// Kilitli açılışta sessiz "Mailhere kilitli — postaları almak için bir kez
+/// aç" bildirimi (Kotlin `Bildirimler.kilitliGoster`; aynı kimlik, yeniden
+/// gösterim sessizce günceller). Kilit açılınca `Platform::core_ready`
+/// kaldırır.
+fn kilitli_bildir() {
+    if let Err(e) = crate::kopru::kilitli_goster() {
+        tracing::warn!(error = %e, "kilit bildirimi gösterilemedi");
+    }
+}
+
 /// Etkinliksiz çekirdeği açar ve başlatır (hizmet). Hesap yoksa açılan
-/// çekirdek hemen kapatılır.
+/// çekirdek hemen kapatılır. Parola kilidi açıksa çekirdek açılmaz
+/// (`Kilitli`): postalar ancak uygulamada parola girilince gelir.
 pub fn basliksiz_baslat() -> Baslatma {
     if !crate::kopru::kuruldu() {
         return Baslatma::KopruYok;
@@ -550,6 +571,27 @@ mod tests {
         assert_eq!(Baslatma::HesapYok.kod(), 4);
         assert_eq!(Baslatma::Hata.kod(), 5);
         assert_eq!(Baslatma::Vazgecildi.kod(), 6);
+        assert_eq!(Baslatma::Kilitli.kod(), 7);
+    }
+
+    /// Kilitli yol: `Headless::open` `Locked` döndürünce çekirdek açılmaz,
+    /// sonuç `Kilitli`dir ve kapı boş kalır (masaüstünde köprü olmadığından
+    /// `KopruYok`; eşleme `ac()` ile aynı koldur).
+    #[test]
+    fn kilitli_hata_kilitli_koduna_eslenir() {
+        let e = mh_core::AppError::new(mh_core::ErrorCode::Locked, "kilitli");
+        let kod = match e.code {
+            mh_core::ErrorCode::Locked => Baslatma::Kilitli,
+            mh_core::ErrorCode::Keyring => Baslatma::AnahtarYok,
+            _ => Baslatma::Hata,
+        };
+        assert_eq!(kod, Baslatma::Kilitli);
+        assert_eq!(kod.kod(), 7, "Kotlin KOD_KILITLI");
+        // Kilitli sonuç kapıyı doldurmaz: sonraki etkinliksiz açılış yine denenebilir.
+        let k = Kapi::<u8, String>::new();
+        let r = k.basliksiz_ac(|| Err::<String, _>(Baslatma::Kilitli));
+        assert!(matches!(r, Err(Vazgecis::Hata(Baslatma::Kilitli))));
+        assert_eq!(k.durum(), Durum::Yok);
     }
 
     #[test]

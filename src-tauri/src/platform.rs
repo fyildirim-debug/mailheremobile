@@ -127,6 +127,40 @@ impl Platform for AndroidPlatform {
             .buttons(MessageDialogButtons::OkCustom("Kapat".into()))
             .show(move |_| exit.exit(1));
     }
+
+    /// Pencereli çekirdek açılıyor (olağan açılış ya da parola kilidi
+    /// açıldı): süreçte etkinliksiz çekirdek varsa yerini bırakır (tek çekirdek).
+    fn core_starting(&self, _app: &AppHandle) {
+        crate::cekirdek::tauri_kuruluyor();
+    }
+
+    /// Çekirdek hazır: kapı Tauri'ye geçer, bekleyen bildirim eylemleri
+    /// uygulanır, "Mailhere kilitli" bildirimi (varsa) kalkar. Kilit açılınca
+    /// pencere çoktan yüklüdür: açılacak posta beklemeden açılır.
+    fn core_ready(&self, app: &AppHandle) {
+        crate::cekirdek::tauri_hazir(app.clone());
+        crate::eylem::setup(app);
+        if app.get_webview_window(crate::MAIN).is_some() {
+            crate::eylem::page_loaded(app);
+        }
+        if let Err(e) = crate::kopru::kilitli_kaldir() {
+            if cfg!(target_os = "android") {
+                tracing::debug!(error = %e, "kilit bildirimi kaldırılamadı");
+            }
+        }
+    }
+
+    /// Çekirdek açılamadı: kapı boşalır.
+    fn core_failed(&self, _app: &AppHandle) {
+        crate::cekirdek::tauri_vazgec();
+    }
+
+    /// Android'de süreç yeniden açılamaz (`restart` masaüstü işidir): süreç
+    /// kapanır, kullanıcı uygulamayı yeniden açar; bekleyen sıfırlama o
+    /// açılışta uygulanır.
+    fn restart(&self, app: &AppHandle) {
+        app.exit(0);
+    }
 }
 
 #[cfg(test)]

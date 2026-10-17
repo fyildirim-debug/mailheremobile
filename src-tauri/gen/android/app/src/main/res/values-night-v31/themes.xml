@@ -1,0 +1,12 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Gece, Android 12+: values-v31/themes.xml ile aynı; zemin koyu, sistem
+         çubuğu simgeleri açık. -->
+    <style name="Theme.Mailhere" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/zemin</item>
+        <item name="android:colorBackground">@color/zemin</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowSplashScreenBackground">@color/zemin</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/acilis_isaret</item>
+    </style>
+</resources>

@@ -1,0 +1,15 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Android 12+: sistem açılış ekranı. Varsayılanı başlatıcı ikonunu büyük
+         daire içinde gösterir; yerine zemin renginde ortada küçük işaret
+         (drawable/acilis_isaret). Ekran ilk arayüz hazır olana dek tutulur ve
+         doğrudan arayüze solar (MainActivity). Öteki öğeler values/themes.xml
+         ile aynıdır. -->
+    <style name="Theme.Mailhere" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/zemin</item>
+        <item name="android:colorBackground">@color/zemin</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowSplashScreenBackground">@color/zemin</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/acilis_isaret</item>
+    </style>
+</resources>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Açılış ekranı işareti: uygulama logosunun kendisi (app/public/logo.svg),
+     288 dp'lik açılış simgesi alanının ortasında 64 dp. Android 12+ simgeyi
+     bu alanın tamamına yayar; işaretin küçük kalması burada çizilerek sağlanır
+     (yaklaşık 1/7 ölçek: logonun 448 birimlik karesi 64 dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <group
+        android:scaleX="0.142857"
+        android:scaleY="0.142857"
+        android:translateX="107.43"
+        android:translateY="107.43">
+        <path
+            android:fillColor="#4655D4"
+            android:pathData="M160,32 L352,32 A128,128 0 0 1 480,160 L480,352 A128,128 0 0 1 352,480 L160,480 A128,128 0 0 1 32,352 L32,160 A128,128 0 0 1 160,32 Z" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="32"
+            android:strokeLineJoin="round"
+            android:pathData="M155,196 L357,196 L357,342 A18,18 0 0 1 339,360 L173,360 A18,18 0 0 1 155,342 Z" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="32"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M165,208 L256,278 L347,208" />
+        <path
+            android:fillColor="#F2B544"
+            android:strokeColor="#4655D4"
+            android:strokeWidth="22"
+            android:pathData="M328,128 A56,56 0 1 0 440,128 A56,56 0 1 0 328,128 Z" />
+    </group>
+</vector>

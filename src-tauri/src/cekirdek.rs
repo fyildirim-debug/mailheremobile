@@ -314,7 +314,8 @@ pub fn push_ilet(json: String) -> bool {
     }
     if let Some(h) = KAPI.basliksiz() {
         let p = mh_app::push::Parcalar::of(h.state());
-        h.handle().spawn(async move { sonuc(p.handle(&json).await) });
+        h.handle()
+            .spawn(async move { sonuc(p.handle(&json).await) });
         return true;
     }
     let Some(app) = KAPI.tauri() else {

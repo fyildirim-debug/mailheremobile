@@ -146,6 +146,7 @@ for ad in Lcom/furkanyildirim/mailhere/plugin/MhPlugin\; Lcom/furkanyildirim/mai
   Lcom/furkanyildirim/mailhere/plugin/ArkaPlanHizmeti\; Lcom/furkanyildirim/mailhere/plugin/ArkaPlanIsi\; \
   Lcom/furkanyildirim/mailhere/plugin/BootAlici\; Lcom/furkanyildirim/mailhere/plugin/ArkaKopru\; \
   Lcom/furkanyildirim/mailhere/MailhereApp\; Lcom/furkanyildirim/mailhere/YenidenBaslatActivity\; \
+  Lcom/furkanyildirim/mailhere/plugin/ItmeServisi\; \
   pilDurumu pilAyarlari arkaPlanDurumu arkaPlanAyarla acilisDurumu acilisAyarla haptic openNotificationSettings \
   kasaOku kasaYaz kasaSil yanitKuyrukta yanitGeriAlindi bildirimlerAcik bekleyenler anlikAcik kilitliGoster kilitliKaldir \
   cekirdekBaslat cekirdekDurdur cekirdekDurumu tekSefer; do

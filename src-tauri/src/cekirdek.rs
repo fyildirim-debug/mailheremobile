@@ -303,6 +303,31 @@ pub fn sync_now() -> bool {
     .is_some()
 }
 
+/// Sunucu itmesi iletisini çalışan çekirdeğe verir (eşitleme ya da abonelik
+/// doğrulaması arka planda yürür); çekirdek yoksa `false`.
+pub fn push_ilet(json: String) -> bool {
+    fn sonuc(r: mh_core::AppResult<&'static str>) {
+        match r {
+            Ok(ne) => tracing::info!(ne, "sunucu itmesi"),
+            Err(e) => tracing::warn!(error = %e.message, "sunucu itmesi işlenemedi"),
+        }
+    }
+    if let Some(h) = KAPI.basliksiz() {
+        let p = mh_app::push::Parcalar::of(h.state());
+        h.handle().spawn(async move { sonuc(p.handle(&json).await) });
+        return true;
+    }
+    let Some(app) = KAPI.tauri() else {
+        return false;
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let p = mh_app::push::Parcalar::of(&state);
+    tauri::async_runtime::spawn(async move { sonuc(p.handle(&json).await) });
+    true
+}
+
 /// Etkinliksiz çekirdeğin kabuğu: bildirimleri Kotlin'e köprüden verir.
 struct AndroidKabuk;
 

@@ -70,6 +70,7 @@ pub const JNI_GIRISLER: &[&str] = &[
     "esitle",
     "eylem",
     "tekSefer",
+    "push",
 ];
 
 /// Giriş noktalarının `.so` içindeki sembol öneki.
@@ -278,6 +279,22 @@ mod android {
             }
         };
         if crate::eylem::dispatch_global(e) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    }
+
+    /// Sunucu itmesi iletisi (Firebase veri iletisi JSON'u ya da
+    /// `{"t":"jeton"}`). Çalışan çekirdek yoksa `false`: Kotlin işi zamanlar.
+    #[no_mangle]
+    pub extern "system" fn Java_com_furkanyildirim_mailhere_plugin_ArkaKopru_push(
+        mut env: JNIEnv,
+        _sinif: JClass,
+        json: JString,
+    ) -> jboolean {
+        let json = string_arg(&mut env, &json);
+        if crate::cekirdek::push_ilet(json) {
             JNI_TRUE
         } else {
             JNI_FALSE

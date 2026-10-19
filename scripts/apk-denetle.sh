@@ -43,13 +43,16 @@ echo "$BADGING" | grep -q "^application-label:'Mailhere'" || sorun "uygulama ad�
 IZINLER="$(echo "$BADGING" | sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" | grep -v '^com.furkanyildirim.mailhere.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION$' | sort)"
 # Anlık bildirim (varsayılan açık): ön plan hizmeti (specialUse), kullanıcı
 # dokununca istenen pil optimizasyonu muafiyeti, açılışta hizmet ve kalıcı
-# yoklama işi için RECEIVE_BOOT_COMPLETED. Uyanık tutma (WAKE_LOCK) ve kesin
-# alarm yok.
+# yoklama işi için RECEIVE_BOOT_COMPLETED. Sunucu itmesi (Firebase Cloud
+# Messaging): WAKE_LOCK (itmede eşitleme bitene dek, en çok 30 sn),
+# c2dm RECEIVE (Google Play Hizmetleri'nden ileti) ve ACCESS_NETWORK_STATE
+# (firebase-messaging). Kesin alarm, konum, kişiler yok.
 BEKLENEN="$(printf '%s\n' android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.CAMERA \
   android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE \
-  android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS android.permission.RECEIVE_BOOT_COMPLETED | sort)"
+  android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS android.permission.RECEIVE_BOOT_COMPLETED \
+  android.permission.WAKE_LOCK android.permission.ACCESS_NETWORK_STATE com.google.android.c2dm.permission.RECEIVE | sort)"
 if [ "$IZINLER" != "$BEKLENEN" ]; then
-  sorun "izinler yalnız INTERNET, POST_NOTIFICATIONS, CAMERA, FOREGROUND_SERVICE(_SPECIAL_USE), REQUEST_IGNORE_BATTERY_OPTIMIZATIONS ve RECEIVE_BOOT_COMPLETED olmalı; bulunan: $(echo "$IZINLER" | tr '\n' ' ')"
+  sorun "izinler beklenen listeden farklı (INTERNET, POST_NOTIFICATIONS, CAMERA, FOREGROUND_SERVICE(_SPECIAL_USE), REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, c2dm RECEIVE); bulunan: $(echo "$IZINLER" | tr '\n' ' ')"
 fi
 # Kamera yalnız QR tarayıcı için; kamerasız cihazlarda da kurulabilmeli
 # (badging satırı feature-group altında girintilidir).
@@ -105,6 +108,12 @@ IS="$(blok 'plugin.ArkaPlanIsi')"
 [ -n "$IS" ] || sorun "ArkaPlanIsi manifestte yok"
 echo "$IS" | grep -q 'android:exported.*=false' || sorun "ArkaPlanIsi exported=false değil"
 echo "$IS" | grep -q 'android.permission.BIND_JOB_SERVICE' || sorun "ArkaPlanIsi BIND_JOB_SERVICE izni yok"
+# Sunucu itmesi hizmeti dışa kapalı, yalnız Firebase iletisi süzgeci; Analytics kapalı.
+ITME="$(agac 'plugin.ItmeServisi')"
+[ -n "$ITME" ] || sorun "ItmeServisi manifestte yok"
+echo "$ITME" | grep -q 'android:exported.*=false' || sorun "ItmeServisi exported=false değil"
+echo "$ITME" | grep -q 'com.google.firebase.MESSAGING_EVENT' || sorun "ItmeServisi MESSAGING_EVENT süzgeci yok"
+echo "$MANIFEST" | grep -q 'firebase_analytics_collection_deactivated' || sorun "Firebase Analytics kapatılmamış"
 YENIDEN="$(blok 'YenidenBaslatActivity')"
 [ -n "$YENIDEN" ] || sorun "YenidenBaslatActivity manifestte yok"
 echo "$YENIDEN" | grep -q 'android:exported.*=false' || sorun "YenidenBaslatActivity exported=false değil"
@@ -119,11 +128,16 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Temiz oda: QR çözme zxing core ile; Google Play Hizmetleri ya da ML Kit sınıfı yok.
+# Temiz oda: QR çözme zxing core ile, ML Kit yok. Google Play Hizmetleri yalnız
+# sunucu itmesi için (firebase-messaging: common, tasks, cloudmessaging);
+# ölçüm/Analytics, Crashlytics, reklam, konum, harita ve görüntü sınıfı yok.
 unzip -q -o "$APK" 'classes*.dex' -d "$TMP/dex"
-if grep -l -a -E 'Lcom/google/(android/gms|mlkit)/' "$TMP"/dex/classes*.dex > /dev/null 2>&1; then
-  sorun "dex'te Google Play Hizmetleri ya da ML Kit sınıfı var"
+# (firebase/analytics/connector yalnız boş bir arayüzdür; Analytics'in kendisi
+# FirebaseAnalytics ve gms/measurement'tır.)
+if grep -l -a -E 'Lcom/google/(mlkit/|android/gms/(measurement|analytics|ads|location|maps|vision|ads_identifier)/|firebase/crashlytics/|firebase/analytics/FirebaseAnalytics;)' "$TMP"/dex/classes*.dex > /dev/null 2>&1; then
+  sorun "dex'te ML Kit, ölçüm, reklam, konum ya da görüntü sınıfı var"
 fi
+grep -l -a 'Lcom/google/firebase/messaging/FirebaseMessagingService;' "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te Firebase Messaging yok"
 grep -l -a 'Lcom/google/zxing/qrcode/QRCodeReader;' "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te zxing QRCodeReader yok"
 # R8 sonrası: Rust'ın adla çağırdığı eklenti komutları, JNI köprüsünün
 # statik yöntemleri (proguard-rules.pro korur) ve manifestteki bileşenler
@@ -160,7 +174,7 @@ ls "$TMP"/lib/arm64-v8a/ | grep -q '^libmailhere_lib.so$' || sorun "libmailhere_
 # kendi girişi de yerinde.
 if [ -x "$NM" ]; then
   SEMBOLLER="$("$NM" -D --defined-only "$TMP"/lib/arm64-v8a/libmailhere_lib.so 2>/dev/null | awk '{ print $NF }')"
-  for ad in kur cekirdekBaslat cekirdekDurdur cekirdekDurumu esitle eylem tekSefer; do
+  for ad in kur cekirdekBaslat cekirdekDurdur cekirdekDurumu esitle eylem tekSefer push; do
     echo "$SEMBOLLER" | grep -qx "Java_com_furkanyildirim_mailhere_plugin_ArkaKopru_$ad" \
       || sorun ".so'da Java_com_furkanyildirim_mailhere_plugin_ArkaKopru_$ad yok"
   done

@@ -8,7 +8,7 @@ exclude = ["mailhere"]
 
 [workspace.package]
 # Sürüm `mailhere` ile birlikte yürür (tauri.conf.json ve package.json aynı).
-version = "0.8.2"
+version = "0.9.0"
 edition = "2021"
 license = "MIT"
 authors = ["Furkan YILDIRIM <posta@furkanyildirim.com>"]

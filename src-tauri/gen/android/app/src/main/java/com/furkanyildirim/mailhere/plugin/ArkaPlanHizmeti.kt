@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -35,7 +36,7 @@ import androidx.core.content.ContextCompat
  *   onu kapatıp pencereli çekirdeği açar (süreç başına tek çekirdek).
  * - 15 dakikada bir Doze'da da çalışan kesin olmayan alarm ([ArkaPlan.uyan]):
  *   çekirdek bağlantıları bir eşitlemeyle sınar (yarı ölü TCP, NAT zaman
- *   aşımı); yayın kilidi 8 sn tutulur.
+ *   aşımı); yayın 8 sn, işlemci eşitleme için en çok 30 sn uyanık tutulur.
  *
  * Tür `specialUse` (Android 14+): `dataSync` Android 15'te 24 saatte 6 saatle
  * sınırlıdır ve açılıştan başlatılamaz; sürekli posta bağlantısına uymaz.
@@ -120,6 +121,7 @@ object ArkaPlan {
     private const val ACILIS = "acilis"
     private const val ARALIK = 15 * 60 * 1000L
     private const val UYANIK = 8_000L
+    private const val ESITLEME_UYANIK = 30_000L
     private const val TAG = "Mailhere"
 
     private fun tercih(ctx: Context) =
@@ -220,6 +222,11 @@ object ArkaPlan {
             return
         }
         alarmKur(ctx)
+        // Yayın en çok ~10 sn tutulabilir; eşitleme (bağlantı yenileme, yeni
+        // posta, bildirim) için işlemci ayrıca en çok 30 sn uyanık kalır.
+        ctx.getSystemService(PowerManager::class.java)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Mailhere:uyan")
+            ?.acquire(ESITLEME_UYANIK)
         Handler(Looper.getMainLooper()).postDelayed({ sonuc.finish() }, UYANIK)
     }
 }

@@ -8,14 +8,15 @@ import android.util.Log
 import com.furkanyildirim.mailhere.plugin.ArkaKopru
 import com.furkanyildirim.mailhere.plugin.ArkaPlanIsi
 import com.furkanyildirim.mailhere.plugin.Bildirimler
+import com.furkanyildirim.mailhere.plugin.Itme
 import java.io.File
 
 /**
  * Süreç başlangıcı (etkinlikle ya da etkinliksiz: açılış alıcısı, hizmet,
  * JobScheduler, bildirim düğmesi). Yerel kitaplığı yükler ve etkinliksiz JNI
  * köprüsünü kurar ([ArkaKopru.kur]: uygulama `Context`i, veri ve önbellek
- * klasörleri, günlük, çalışma ortamı), bildirim kanallarını oluşturur ve
- * yoklama işini zamanlar. Trampolin sürecinde (`:yeniden`) hiçbiri yapılmaz:
+ * klasörleri, günlük, çalışma ortamı), bildirim kanallarını oluşturur,
+ * yoklama işini zamanlar ve sunucu itmesini (Firebase) kurar. Trampolin sürecinde (`:yeniden`) hiçbiri yapılmaz:
  * o süreç yalnız ana süreci öldürüp uygulamayı yeniden açar.
  */
 class MailhereApp : Application() {
@@ -31,6 +32,8 @@ class MailhereApp : Application() {
             }
         }
         ArkaPlanIsi.planla(this)
+        // Sunucu itmesi: Firebase ayarı aktarıcıdan, jeton kasaya (Itme.kt).
+        Itme.kur(this)
     }
 
     private fun surecAdi(): String {

@@ -64,6 +64,29 @@ class ArkaPlanIsi : JobService() {
         /** Tek seferlik eşitlemenin üst sınırı (iş en çok 10 dk sürebilir). */
         private const val SURE = 75_000L
 
+        private const val HEMEN_ID = 8
+
+        /**
+         * Sunucu itmesi geldi, çekirdek yok: hemen çalışan tek seferlik iş
+         * (Android 12+ hızlandırılmış iş; yüksek öncelikli Firebase iletisi
+         * buna izin verir). Aynı işi yapar: hizmeti ya da tek seferlik
+         * eşitle-bildir'i açar. Bekleyen varsa yenisi eklenmez.
+         */
+        fun hemen(ctx: Context) {
+            val js = ctx.getSystemService(JobScheduler::class.java) ?: return
+            try {
+                if (js.getPendingJob(HEMEN_ID) != null) return
+                val b = JobInfo.Builder(HEMEN_ID, ComponentName(ctx, ArkaPlanIsi::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    b.setExpedited(true)
+                }
+                js.schedule(b.build())
+            } catch (e: Exception) {
+                Log.w(TAG, "itme işi zamanlanamadı: ${e.javaClass.simpleName}")
+            }
+        }
+
         /** Periyodik işi zamanlar (zaten varsa dokunmaz). */
         fun planla(ctx: Context) {
             val js = ctx.getSystemService(JobScheduler::class.java) ?: return

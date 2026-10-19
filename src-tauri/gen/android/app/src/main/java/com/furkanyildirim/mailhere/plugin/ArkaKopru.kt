@@ -92,6 +92,9 @@ object ArkaKopru {
     /** Tek seferlik eşitle-bildir (en çok `sureMs`); sonuç `KOD_*`. */
     @JvmStatic external fun tekSefer(sureMs: Long): Int
 
+    /** Sunucu itmesi iletisi (JSON) çalışan çekirdeğe; çekirdek yoksa `false`. */
+    @JvmStatic external fun push(json: String): Boolean
+
     private inline fun <T> guvenli(varsayilan: T, f: () -> T): T {
         if (!yukle()) return varsayilan
         return try {
@@ -115,6 +118,8 @@ object ArkaKopru {
     fun eylemGonder(olay: JSONObject): Boolean = guvenli(false) { eylem(olay.toString()) }
 
     fun tekSeferGuvenli(sureMs: Long): Int = guvenli(KOD_HATA) { tekSefer(sureMs) }
+
+    fun pushGonder(json: String): Boolean = guvenli(false) { push(json) }
 
     // ------------------------------------------------ Rust'tan çağrılanlar
 

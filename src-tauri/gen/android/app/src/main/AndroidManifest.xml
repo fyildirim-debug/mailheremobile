@@ -12,16 +12,16 @@
          dokununca istenen pil optimizasyonu muafiyeti (Ayarlar › Bildirimler).
          Açılışta ve uygulama güncellenince hizmet (BootAlici) ve yeniden
          başlatmaya dayanıklı yoklama işi (ArkaPlanIsi, setPersisted) için
-         RECEIVE_BOOT_COMPLETED. Uyanık tutma izni gerekmez: hizmet ve iş
-         kendi uyanıklığını taşır; bildirim eklentisinin kitaplık bildiriminden
-         gelen WAKE_LOCK atılır. -->
+         RECEIVE_BOOT_COMPLETED. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Kamerasız cihazda da kurulur: aktarım kodu yapıştırılabilir. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
+    <!-- Uyanık tutma: sunucu itmesi ve uyanma alarmı gelince eşitleme bitene
+         dek işlemci kısa süre (en çok 30 sn) uyanık kalır; Firebase de ister. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Veri (şifreli veritabanı, anahtar kasası, önbellek) bulut yedeğine ve
          cihazlar arası aktarıma girmez. Açık metin (http) trafiği yok; yalnız
@@ -123,8 +123,23 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Kullanıcının açtığı sürekli e-posta bağlantısı (IMAP IDLE / JMAP anlık bildirim): yeni posta, sunucu bildirir bildirmez cihazda üretilen bildirimle haber verilir; aracı sunucu ya da Google Play Hizmetleri yoktur." />
+                android:value="Kullanıcının açtığı sürekli e-posta bağlantısı (IMAP IDLE / JMAP anlık bildirim): yeni posta, sunucu bildirir bildirmez cihazda üretilen bildirimle haber verilir. Bu bağlantı cihazla posta sunucusu arasındadır; aracı sunucu kullanmaz." />
         </service>
+
+        <!-- Sunucu itmesi (Firebase): yalnız Google Play Hizmetleri bağlanır
+             (dışa kapalı; Firebase'in kendi alıcısı izinle korunur). -->
+        <service
+            android:name=".plugin.ItmeServisi"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- google-services yok: Firebase ayarı aktarıcıdan gelir (Itme.kt); jeton
+             kendiliğinden yenilenir; Analytics ve reklam kimliği toplama kapalı. -->
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="true" />
+        <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
+        <meta-data android:name="google_analytics_adid_collection_enabled" android:value="false" />
 
         <!-- Zamanlanmış bildirim kullanılmaz; açılışta geri yükleme alıcısı gereksiz. -->
         <receiver android:name="app.tauri.notification.LocalNotificationRestoreReceiver" tools:node="remove" />

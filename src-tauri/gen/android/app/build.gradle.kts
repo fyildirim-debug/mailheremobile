@@ -97,14 +97,17 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     // QR tarayıcı (QrScanActivity.kt): CameraX önizleme ve kare analizi,
-    // zxing core ile çözme; ikisi Apache-2.0. ML Kit ya da Google Play
-    // Hizmetleri yok (scripts/apk-denetle.sh dex'te gms/mlkit arar).
+    // zxing core ile çözme; ikisi Apache-2.0. ML Kit yok (scripts/apk-denetle.sh
+    // dex'te mlkit ve Play Hizmetleri'nin ölçüm/konum/reklam sınıflarını arar).
     val camerax = "1.5.3"
     implementation("androidx.camera:camera-core:$camerax")
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
     implementation("com.google.zxing:core:3.5.4")
+    // Sunucu itmesi (Itme.kt): yalnız Firebase Cloud Messaging; Analytics,
+    // Crashlytics ya da google-services eklentisi yok (ayar aktarıcıdan gelir).
+    implementation("com.google.firebase:firebase-messaging:25.1.3")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

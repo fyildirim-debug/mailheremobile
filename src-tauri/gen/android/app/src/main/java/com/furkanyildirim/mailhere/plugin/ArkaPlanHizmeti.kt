@@ -62,7 +62,11 @@ class ArkaPlanHizmeti : Service() {
                 startForeground(Bildirimler.ID_ARKA, bildirim)
             }
         } catch (e: Exception) {
+            // Android 12+ arka plandan başlatmayı burada (startForeground) reddeder;
+            // startForegroundService çağıran taraf bunu göremez. Açıklama istenmişse
+            // (açılış alıcısı) yedek yoklamanın çalıştığı burada söylenir.
             Log.w(TAG, "anlık bildirim hizmeti başlatılamadı: ${e.javaClass.simpleName}")
+            if (intent?.getBooleanExtra(ArkaPlan.E_ACIKLAMA, false) == true) Bildirimler.yedekGoster(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -124,6 +128,9 @@ object ArkaPlan {
     private const val ESITLEME_UYANIK = 30_000L
     private const val TAG = "Mailhere"
 
+    /** Hizmet niyeti eki: başlatılamazsa yedek yoklama bildirimi gösterilsin. */
+    const val E_ACIKLAMA = "mh.aciklama"
+
     private fun tercih(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(TERCIH, Context.MODE_PRIVATE)
 
@@ -171,7 +178,7 @@ object ArkaPlan {
         if (!acik(ctx)) return false
         if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
         return try {
-            baslat(ctx)
+            baslat(ctx, aciklamaGoster)
             true
         } catch (e: Exception) {
             Log.w(TAG, "anlık bildirim hizmeti başlatılamadı: ${e.javaClass.simpleName}")
@@ -180,8 +187,9 @@ object ArkaPlan {
         }
     }
 
-    private fun baslat(ctx: Context) {
-        ContextCompat.startForegroundService(ctx, Intent(ctx, ArkaPlanHizmeti::class.java))
+    private fun baslat(ctx: Context, aciklamaGoster: Boolean = false) {
+        val niyet = Intent(ctx, ArkaPlanHizmeti::class.java).putExtra(E_ACIKLAMA, aciklamaGoster)
+        ContextCompat.startForegroundService(ctx, niyet)
     }
 
     private fun durdur(ctx: Context) {

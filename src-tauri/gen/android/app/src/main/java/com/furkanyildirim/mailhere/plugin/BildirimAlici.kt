@@ -25,9 +25,12 @@ import org.json.JSONObject
  * etkinliksiz çekirdeği açar, kuyruk boşalır ve eylem saniyeler içinde
  * uygulanır. Olmazsa uygulama açılınca uygulanır.
  *
- * "Kodu kopyala" Rust'a gitmez: doğrulama kodu düğme niyetinin ekindedir ve
- * burada panoya yazılır; çekirdek kapalıyken de (yalnız bu alıcı ayaktayken)
- * çalışır. Kod günlüğe yazılmaz.
+ * "Kodu kopyala" kodu Rust'a sormaz: doğrulama kodu düğme niyetinin ekindedir
+ * ve burada panoya yazılır; çekirdek kapalıyken de (yalnız bu alıcı ayaktayken)
+ * çalışır. Kod günlüğe yazılmaz. Kopyalamadan sonra Rust'a yalnız posta
+ * kimliğiyle `kodKopyalandi` eylemi gider: ayar açıksa ("kod kopyalanınca
+ * okundu say") posta okundu sayılır; çekirdek yoksa öteki eylemler gibi
+ * kasada bekler.
  */
 class BildirimAlici : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -99,6 +102,7 @@ class BildirimAlici : BroadcastReceiver() {
      * ve kendiliğinden kalkar; süreli bildirimi olmayan eski Android'de
      * bildirim hemen kalkar, onay kısa iletiyle (Toast) verilir. Yazılamazsa
      * bildirim yerinde kalır, ne olduğunu ve ne yapılabileceğini söyler.
+     * Ardından Rust'a `kodKopyalandi` eylemi gider (okundu sayma).
      */
     private fun kodKopyala(ctx: Context, p: Posta) {
         if (!Bildirimler.kodKopyala(ctx, p.kod)) {
@@ -108,6 +112,24 @@ class BildirimAlici : BroadcastReceiver() {
         if (!Bildirimler.kodKopyalandi(ctx, p)) {
             Toast.makeText(ctx.applicationContext, R.string.bildirim_kod_kopyalandi, Toast.LENGTH_SHORT).show()
         }
+        // Kod kendiliğinden kopyalanırken okundu sayılmış postada yapılacak iş yok.
+        if (p.okundu) return
+        // Ayar açıksa posta okundu sayılır (kararı Rust verir). "Kod kopyalandı"
+        // onayına dokunulmaz; çekirdek yoksa eylem kasada bekler ve hizmet
+        // başlatılmaya çalışılır, olmazsa uygulama açılınca uygulanır.
+        val olay = JSONObject().put("tur", "kodKopyalandi").put("id", p.id)
+        if (ArkaKopru.eylemGonder(olay)) return
+        val sonuc = goAsync()
+        Thread {
+            try {
+                Bekleyenler.ekle(ctx, olay)
+                ArkaPlan.baslatGerekirse(ctx)
+            } catch (e: Exception) {
+                Log.w(TAG, "kod kopyalama eylemi kaydedilemedi")
+            } finally {
+                sonuc.finish()
+            }
+        }.start()
     }
 
     companion object {

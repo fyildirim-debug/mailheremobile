@@ -194,8 +194,9 @@ for ad in Lcom/furkanyildirim/mailhere/plugin/MhPlugin\; Lcom/furkanyildirim/mai
   grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok (R8 sildi mi?)"
 done
 # Bildirimde "Kodu kopyala" (kod düğme niyetinin ekinde; pano içeriği hassas
-# işaretli) ve "Yeni posta" kısayolunun eylemi küçültmeden sağ çıkmış olmalı.
-for ad in com.furkanyildirim.mailhere.KOD_KOPYALA android.content.extra.IS_SENSITIVE com.furkanyildirim.mailhere.YENI_POSTA; do
+# işaretli; ardından Rust'a giden kodKopyalandi eylemi) ve "Yeni posta"
+# kısayolunun eylemi küçültmeden sağ çıkmış olmalı.
+for ad in com.furkanyildirim.mailhere.KOD_KOPYALA android.content.extra.IS_SENSITIVE com.furkanyildirim.mailhere.YENI_POSTA kodKopyalandi; do
   grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok"
 done
 # Ön plan hizmetinin kanalı en düşük önemle yeni kimlikte (durum çubuğunda

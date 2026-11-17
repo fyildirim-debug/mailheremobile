@@ -7,6 +7,11 @@
 //! `mailto.rs`te ayrıştırılır) ve "Yeni posta" uygulama kısayolu. Bunlar
 //! pencere ister: arayüz hazır olunca `Platform::open_compose` ile açılır.
 //!
+//! "Kodu kopyala" düğmesi kodu Kotlin'de panoya yazar; ardından
+//! [`Eylem::KodKopyalandi`] gelir ve ayar açıksa (`Settings.otp_mark_read`)
+//! posta okundu sayılır. Bildirime dokunulmaz: "Kod kopyalandı" onayı kendi
+//! süresinde kalkar.
+//!
 //! Yol: bildirim düğmesi → `BildirimAlici` (Kotlin, `exported=false`) →
 //! `ArkaKopru.eylem(json)` (JNI, `kopru.rs`) → [`dispatch_global`] → hangi
 //! çekirdek açıksa (pencereli Tauri ya da etkinliksiz, `cekirdek.rs`) onun
@@ -68,6 +73,11 @@ pub enum Eylem {
     },
     /// Anlık bildirim açıkken periyodik uyanma: bağlantılar denetlenir.
     Uyan,
+    /// Bildirimdeki "Kodu kopyala" kodu panoya yazdı: ayar açıksa
+    /// (`Settings.otp_mark_read`) posta okundu sayılır.
+    KodKopyalandi {
+        id: MessageId,
+    },
     /// Yazma ekranı: `mailto:` bağlantısı (`VIEW` / `SENDTO`) ya da "Yeni
     /// posta" kısayolu. `adres` niyetin `mailto:` adresi (kısayolda boş),
     /// `alicilar` niyetin `EXTRA_EMAIL` eki; ikisi de güvenilmez girdidir
@@ -91,6 +101,7 @@ impl Eylem {
             Eylem::Yanit { .. } => "yanit",
             Eylem::GeriAl { .. } => "geriAl",
             Eylem::Uyan => "uyan",
+            Eylem::KodKopyalandi { .. } => "kodKopyalandi",
             Eylem::Yaz { .. } => "yaz",
         }
     }
@@ -280,6 +291,23 @@ fn dispatch_basliksiz(h: &Arc<Headless>, e: Eylem) {
         .spawn(async move { run_basliksiz(h, e).await });
 }
 
+/// "Kod kopyalanınca okundu say" açık mı; ayar okunamazsa posta okunmamış kalır.
+fn kod_okundu_sayilir(state: &mh_app::AppState) -> bool {
+    state
+        .store
+        .settings()
+        .map(|s| s.otp_mark_read)
+        .unwrap_or(false)
+}
+
+/// Kodu kopyalanan postayı okundu sayma sonucu. Bildirim değiştirilmez
+/// ("Kod kopyalandı" onayı kendi süresinde kalkar); hata yalnız günlüğe.
+fn kod_okundu_sonucu(id: MessageId, res: AppResult<()>) {
+    if let Err(e) = res {
+        tracing::warn!(id, code = %e.code, "kodu kopyalanan posta okundu sayılamadı");
+    }
+}
+
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> AppResult<T> + Send + 'static,
 ) -> AppResult<T> {
@@ -319,6 +347,20 @@ async fn run(app: &AppHandle, e: Eylem) {
                 state.jmap.sync_now();
             }
         }
+        Eylem::KodKopyalandi { id } => {
+            let h = app.clone();
+            let res = blocking(move || {
+                let Some(state) = h.try_state::<mh_app::AppState>() else {
+                    return Ok(());
+                };
+                if !kod_okundu_sayilir(&state) {
+                    return Ok(());
+                }
+                mh_app::notify_actions::apply(&h, &state, id, NotifyAction::MarkRead)
+            })
+            .await;
+            kod_okundu_sonucu(id, res);
+        }
         // Pencere isteyenler `dispatch`te, düğmeler yukarıda ele alındı.
         Eylem::Ac { .. }
         | Eylem::Yaz { .. }
@@ -346,6 +388,17 @@ async fn run_basliksiz(h: Arc<Headless>, e: Eylem) {
             geri_al(id, blocking(move || outbox.cancel(&kuyruk)).await).await;
         }
         Eylem::Uyan => h.sync_now(),
+        Eylem::KodKopyalandi { id } => {
+            let h2 = h.clone();
+            let res = blocking(move || {
+                if !kod_okundu_sayilir(h2.state()) {
+                    return Ok(());
+                }
+                h2.apply(id, NotifyAction::MarkRead)
+            })
+            .await;
+            kod_okundu_sonucu(id, res);
+        }
         Eylem::Ac { .. }
         | Eylem::Yaz { .. }
         | Eylem::Okundu { .. }
@@ -462,6 +515,13 @@ mod tests {
         assert_eq!(e.kind(), "ac");
         let e: Eylem = serde_json::from_str(r#"{"tur":"uyan"}"#).unwrap();
         assert_eq!(e, Eylem::Uyan);
+        // "Kodu kopyala"dan sonra: düğme eylemi değildir (bildirimi kaldırmaz),
+        // pencere istemez (etkinliksiz çekirdekte de uygulanır).
+        let e: Eylem = serde_json::from_str(r#"{"tur":"kodKopyalandi","id":9}"#).unwrap();
+        assert_eq!(e, Eylem::KodKopyalandi { id: 9 });
+        assert_eq!(e.kind(), "kodKopyalandi");
+        assert_eq!(e.action(), None);
+        assert!(!e.pencere_ister());
         assert!(serde_json::from_str::<Eylem>(r#"{"tur":"yok","id":1}"#).is_err());
     }
 
@@ -513,6 +573,7 @@ mod tests {
         // Masaüstü testinde kapı boştur: Kotlin eylemi kasaya yazar.
         assert!(!dispatch_global(Eylem::Sil { id: 1 }));
         assert!(!dispatch_global(Eylem::Uyan));
+        assert!(!dispatch_global(Eylem::KodKopyalandi { id: 1 }));
         assert!(!dispatch_global(Eylem::Yaz {
             adres: "mailto:ayse@ornek.com".into(),
             alicilar: Vec::new(),

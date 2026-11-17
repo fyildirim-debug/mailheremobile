@@ -33,6 +33,9 @@ import com.furkanyildirim.mailhere.R
  * [kod] postadaki doğrulama kodudur (panoya yazılan ham değer; yoksa boş),
  * [kodGorunen] bildirim metninde görünen öbekli hâli ("482 913"). Kod
  * günlüğe yazılmaz: bu sınıf hiçbir yerde metne çevrilip günlüğe verilmez.
+ * [kopyalandi]: kod bildirimden önce kendiliğinden panoya kopyalandı;
+ * [okundu]: o sırada posta okundu da sayıldı (bildirim süreli gösterilir,
+ * okunanları kaldıran uzlaştırma ona dokunmaz).
  */
 data class Posta(
     val id: Long,
@@ -45,6 +48,8 @@ data class Posta(
     val eylemler: List<String> = emptyList(),
     val kod: String = "",
     val kodGorunen: String = "",
+    val kopyalandi: Boolean = false,
+    val okundu: Boolean = false,
 )
 
 /**
@@ -70,6 +75,12 @@ data class Posta(
  *   bildirimin ve düğme niyetinin ekinde taşınır: [BildirimAlici] çekirdek
  *   kapalıyken de panoya yazar ([kodKopyala], hassas içerik işaretiyle).
  *   Kilit ekranındaki açık sürümde ve özette kod yoktur.
+ * - Kod kendiliğinden kopyalandıysa metin "Kod panoya kopyalandı: …" olur.
+ *   Posta o sırada okundu sayıldıysa bildirim "yeni posta" sayılmaz: özete
+ *   girmez, uzlaştırma kaldırmaz, [KOD_OKUNDU_MS] sonra kendiliğinden kalkar.
+ * - Durumlu bildirimler (yanıt kuyrukta, kısa bilgi, bekleyen eylem, okunmuş
+ *   kod) hesabın grubuna girmez: Android özet iptal edilince gruptaki bütün
+ *   bildirimleri de kaldırır; son yeni posta gidince durum satırı da giderdi.
  *
  * Özet, etkin bildirimlerden yeniden kurulur; `notify`/`cancel` eşzamansız
  * olduğundan eklenen ve çıkan etiketler ayrıca verilir.
@@ -114,6 +125,13 @@ object Bildirimler {
     private const val KOD_ONAY_MS = 4_000L
 
     /**
+     * Kodu kendiliğinden kopyalanıp okundu sayılan postanın bildirimi bu kadar
+     * kalır (kodlar kısa ömürlüdür); Android 8'den önce süre yoktur, kullanıcı
+     * kapatana dek durur.
+     */
+    private const val KOD_OKUNDU_MS = 120_000L
+
+    /**
      * Pano içeriği hassas (`ClipDescription.EXTRA_IS_SENSITIVE`, API 33); eski
      * sürümlerde aynı anahtar düz metinle verilir ve yok sayılır.
      */
@@ -132,17 +150,21 @@ object Bildirimler {
     const val E_EYLEMLER = "mh.eylemler"
     const val E_KOD = "mh.kod"
     const val E_KOD_GORUNEN = "mh.kodGorunen"
+    const val E_KOPYALANDI = "mh.kopyalandi"
+    const val E_OKUNDU = "mh.okundu"
     const val E_KUYRUK = "mh.kuyruk"
 
     /**
      * Bildirimin durumu: yoksa yeni posta (özette sayılır, eylemleri var);
      * `yanit` yanıt giden kutusunda, `bilgi` kısa bilgi, `bekliyor` çekirdek
-     * yokken alınan eylem çekirdek açılınca uygulanacak.
+     * yokken alınan eylem çekirdek açılınca uygulanacak, `kod` kodu
+     * kendiliğinden kopyalanıp okundu sayılmış posta ([Posta.okundu]).
      */
     private const val E_DURUM = "mh.durum"
     private const val YANIT = "yanit"
     private const val BILGI = "bilgi"
     private const val BEKLIYOR = "bekliyor"
+    private const val KOD = "kod"
 
     /** RemoteInput sonucu. */
     const val ANAHTAR_YANIT = "mh.yanit"
@@ -208,7 +230,8 @@ object Bildirimler {
         for (p in postalar) {
             gonder(ctx, ETIKET_POSTA + p.id, yeniPosta(ctx, p, sessiz = p !== enYeni))
         }
-        ozetiYenile(ctx, hesap, hesapAdi, postalar, emptySet(), olustur = true)
+        // Kodu kopyalanıp okundu sayılan posta "yeni posta" değildir: özete girmez.
+        ozetiYenile(ctx, hesap, hesapAdi, postalar.filter { !it.okundu }, emptySet(), olustur = true)
     }
 
     /** Postanın bildirimini sessizce yeniden çizer (ör. boş yanıttan sonra). */
@@ -334,7 +357,7 @@ object Bildirimler {
             kaldir(ctx, listOf(p.id))
             return false
         }
-        val kodsuz = p.copy(kod = "", kodGorunen = "")
+        val kodsuz = p.copy(kod = "", kodGorunen = "", kopyalandi = false, okundu = false)
         val metin = ctx.getString(R.string.bildirim_kod_kopyalandi)
         val b = postaKurucu(ctx, kodsuz, BILGI)
             .setContentText(metin)
@@ -388,6 +411,8 @@ object Bildirimler {
             eylemler = x.getStringArray(E_EYLEMLER)?.toList() ?: emptyList(),
             kod = x.getString(E_KOD) ?: "",
             kodGorunen = x.getString(E_KOD_GORUNEN) ?: "",
+            kopyalandi = x.getBoolean(E_KOPYALANDI, false),
+            okundu = x.getBoolean(E_OKUNDU, false),
         )
     }
 
@@ -404,6 +429,8 @@ object Bildirimler {
             putString(E_KOD, p.kod)
             putString(E_KOD_GORUNEN, p.kodGorunen)
         }
+        if (p.kopyalandi) putBoolean(E_KOPYALANDI, true)
+        if (p.okundu) putBoolean(E_OKUNDU, true)
     }
 
     private fun vurgu(ctx: Context) = ContextCompat.getColor(ctx, R.color.vurgu)
@@ -412,9 +439,15 @@ object Bildirimler {
 
     private fun baslikOf(ctx: Context, p: Posta) = p.gonderen.ifBlank { ctx.getString(R.string.app_name) }
 
-    /** "Doğrulama kodu: 482 913"; postada kod yoksa `null`. */
-    private fun kodSatiri(ctx: Context, p: Posta): String? =
-        if (p.kod.isEmpty()) null else ctx.getString(R.string.bildirim_kod, p.kodGorunen.ifBlank { p.kod })
+    /**
+     * "Doğrulama kodu: 482 913"; kod kendiliğinden kopyalandıysa "Kod panoya
+     * kopyalandı: 482 913"; postada kod yoksa `null`.
+     */
+    private fun kodSatiri(ctx: Context, p: Posta): String? {
+        if (p.kod.isEmpty()) return null
+        val metin = if (p.kopyalandi) R.string.bildirim_kod_otomatik else R.string.bildirim_kod
+        return ctx.getString(metin, p.kodGorunen.ifBlank { p.kod })
+    }
 
     /** Kilit ekranındaki açık sürüm: hesap adı ve kısa metin, içerik yok. */
     private fun acikSurum(ctx: Context, hesapAdi: String, metin: String): Notification =
@@ -426,11 +459,18 @@ object Bildirimler {
             .setCategory(NotificationCompat.CATEGORY_EMAIL)
             .build()
 
-    /** Posta bildirimlerinin ortak kurucusu. */
+    /**
+     * Posta bildirimlerinin ortak kurucusu. Durum verilmezse postanınki
+     * geçerlidir: kodu kopyalanıp okundu sayılan posta `kod` durumundadır ve
+     * süresi dolunca kalkar. Yalnız durumsuz ("yeni posta") bildirim hesabın
+     * grubuna girer; özet iptal edilince Android gruptaki her bildirimi
+     * kaldırdığından durumlu bildirimler grubun dışında durur.
+     */
     private fun postaKurucu(ctx: Context, p: Posta, durum: String? = null): NotificationCompat.Builder {
+        val d = durum ?: if (p.okundu) KOD else null
         val x = ekler(p)
-        if (durum != null) x.putString(E_DURUM, durum)
-        return NotificationCompat.Builder(ctx, KANAL_POSTA)
+        if (d != null) x.putString(E_DURUM, d)
+        val b = NotificationCompat.Builder(ctx, KANAL_POSTA)
             .setSmallIcon(R.drawable.ic_bildirim)
             .setColor(vurgu(ctx))
             .setContentTitle(baslikOf(ctx, p))
@@ -438,12 +478,15 @@ object Bildirimler {
             .setWhen(p.zaman)
             .setShowWhen(true)
             .setCategory(NotificationCompat.CATEGORY_EMAIL)
-            .setGroup(GRUP + p.hesap)
-            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(acikSurum(ctx, p.hesapAdi, ctx.getString(R.string.bildirim_yeni_posta)))
             .addExtras(x)
+        if (d == null) {
+            b.setGroup(GRUP + p.hesap).setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+        }
+        if (d == KOD) b.setTimeoutAfter(KOD_OKUNDU_MS)
+        return b
     }
 
     /**

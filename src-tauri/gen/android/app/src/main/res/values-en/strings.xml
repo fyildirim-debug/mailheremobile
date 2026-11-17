@@ -27,6 +27,7 @@
     <string name="bildirim_sil">Delete</string>
     <string name="bildirim_istenmeyen">Spam</string>
     <string name="bildirim_kod">Verification code: %1$s</string>
+    <string name="bildirim_kod_otomatik">Code copied to clipboard: %1$s</string>
     <string name="bildirim_kod_etiket">Verification code</string>
     <string name="bildirim_kod_kopyala">Copy code</string>
     <string name="bildirim_kod_kopyalandi">Code copied</string>

@@ -31,6 +31,7 @@
     <string name="bildirim_sil">Sil</string>
     <string name="bildirim_istenmeyen">İstenmeyen</string>
     <string name="bildirim_kod">Doğrulama kodu: %1$s</string>
+    <string name="bildirim_kod_otomatik">Kod panoya kopyalandı: %1$s</string>
     <string name="bildirim_kod_etiket">Doğrulama kodu</string>
     <string name="bildirim_kod_kopyala">Kodu kopyala</string>
     <string name="bildirim_kod_kopyalandi">Kod kopyalandı</string>

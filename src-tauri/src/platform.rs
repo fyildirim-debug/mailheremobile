@@ -30,7 +30,16 @@ impl Platform for AndroidPlatform {
             .try_state::<mh_app::AppState>()
             .map(|s| mh_app::notify_actions::has_junk(&s, &ev.message.account_id).unwrap_or(false))
             .unwrap_or(false);
-        crate::notify::show(&ev, crate::notify::eylem_adlari(settings, has_junk));
+        crate::notify::show(&ev, settings, has_junk);
+    }
+
+    /// Yeni postadaki doğrulama kodu (`Settings.otp_auto_copy`): Kotlin
+    /// `ClipboardManager` ile, hassas içerik işaretiyle yazar. Pencere ve
+    /// odak gerekmez (Android panoya arka plandan yazmaya izin verir; yalnız
+    /// okumak odak ister). `true`, isteğin sisteme verildiğini söyler:
+    /// üreticinin pano kısıtı yazmayı sessizce yok sayabilir (`kopru::panoya_yaz`).
+    fn copy_text(&self, _app: &AppHandle, text: &str) -> bool {
+        crate::kopru::panoya_yaz(text).unwrap_or(false)
     }
 
     /// Android'de tepsi ya da rozet yok; sayacı arayüz `mh:changed` ile

@@ -338,11 +338,17 @@ impl HeadlessShell for AndroidKabuk {
             mh_app::notify_actions::has_junk(state, &ev.message.account_id).unwrap_or(false)
         })
         .unwrap_or(false);
-        crate::notify::show(&ev, crate::notify::eylem_adlari(settings, has_junk));
+        crate::notify::show(&ev, settings, has_junk);
     }
 
     fn counts_changed(&self) {
         crate::notify::reconcile_soon();
+    }
+
+    /// Uygulama ekranda değilken gelen postadaki doğrulama kodu da panoya
+    /// yazılır (pencereli `AndroidPlatform::copy_text` ile aynı köprü).
+    fn copy_text(&self, text: &str) -> bool {
+        crate::kopru::panoya_yaz(text).unwrap_or(false)
     }
 }
 

@@ -18,6 +18,11 @@
 //!   ("482 913") ve ilk düğme "Kodu kopyala" olur ([`kod_of`],
 //!   [`kod_obekli`]); kopyalama Kotlin'de, çekirdek kapalıyken de çalışır.
 //!   Kod günlüğe yazılmaz, kilit ekranındaki açık sürümde yer almaz.
+//! - Kod bildirimden önce kendiliğinden kopyalandıysa (`NotifyEvent.otp_copied`;
+//!   `Settings.otp_auto_copy`, kabuğun `copy_text`i) metin "Kod panoya
+//!   kopyalandı: …" olur. O sırada posta okundu da sayıldıysa
+//!   (`Settings.otp_mark_read`) bildirim okunanları kaldıran uzlaştırmadan
+//!   muaf, süreli gösterilir; yoksa saniyeler içinde kaybolurdu.
 //! - Kilit ekranında (kullanıcı "hassas içeriği gizle" seçtiyse) yalnız hesap
 //!   adı ve "Yeni posta" görünür (`setPublicVersion`).
 //! - Düğmeler `eylem.rs`te işlenir.
@@ -77,6 +82,14 @@ pub struct Kart {
     /// Kodun okunur hâli (bildirim metni için öbekli); `kod` ile birlikte dolu.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kod_gorunen: Option<String>,
+    /// Kod bu bildirimden önce kendiliğinden panoya kopyalandı
+    /// (`NotifyEvent.otp_copied`): metin "Kod panoya kopyalandı: …" olur.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub kopyalandi: bool,
+    /// Kod kopyalanırken posta okundu da sayıldı (`Settings.otp_mark_read`):
+    /// Kotlin bildirimi uzlaştırmadan muaf, süreli gösterir ([`Bekleyen::kart`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub okundu: bool,
 }
 
 /// Bir hesabın aynı yığında gelen postaları (eskiden yeniye) ve düğmeleri.
@@ -91,11 +104,24 @@ pub struct HesapGrubu {
     pub postalar: Vec<Kart>,
 }
 
-/// Kuyruktaki posta: olay ve o anki düğme listesi.
+/// Kuyruktaki posta: olay, o anki düğme listesi ve "kod kopyalanınca okundu
+/// say" ayarı (`Settings.otp_mark_read`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bekleyen {
     pub ev: NotifyEvent,
     pub eylemler: Vec<String>,
+    pub kod_okundu: bool,
+}
+
+impl Bekleyen {
+    /// Kotlin'e giden posta. Kod kendiliğinden kopyalandıysa ve ayar açıksa
+    /// çekirdek postayı bildirimden önce okundu saymıştır: bildirim süreli
+    /// gösterilir, okunanları kaldıran uzlaştırma ona dokunmaz.
+    pub fn kart(&self) -> Kart {
+        let mut k = kart(&self.ev);
+        k.okundu = k.kopyalandi && self.kod_okundu;
+        k
+    }
 }
 
 /// Ayardaki düğmeler Kotlin adlarıyla, sıra korunarak. İstenmeyen yalnız
@@ -169,6 +195,8 @@ pub fn kart(ev: &NotifyEvent) -> Kart {
         onizleme: first_line(&m.snippet),
         zaman: m.date,
         kod_gorunen: kod.as_deref().map(kod_obekli),
+        kopyalandi: ev.otp_copied && kod.is_some(),
+        okundu: false,
         kod,
     }
 }
@@ -198,8 +226,8 @@ pub fn group(batch: &[Bekleyen]) -> Vec<HesapGrubu> {
         g.hesap_adi = ev.account_name.clone();
         g.eylemler = b.eylemler.clone();
         match g.postalar.iter_mut().find(|k| k.id == ev.message.id) {
-            Some(k) => *k = kart(ev),
-            None => g.postalar.push(kart(ev)),
+            Some(k) => *k = b.kart(),
+            None => g.postalar.push(b.kart()),
         }
     }
     for g in &mut out {
@@ -242,15 +270,17 @@ impl NotifyQueue {
 }
 
 /// Yeni posta bildirimi: kısa bir süre toplanır, sonra tek çağrıyla
-/// (hesap başına grup) gösterilir. Köprü kurulu değilse (masaüstü) sessizce
+/// (hesap başına grup) gösterilir. Düğmeler ve "kod kopyalanınca okundu say"
+/// kullanıcının ayarından. Köprü kurulu değilse (masaüstü) sessizce
 /// geçer; masaüstü ikilisi `Platform::notify`ta sistem bildirimine düşer.
-pub fn show(ev: &NotifyEvent, eylemler: Vec<String>) {
+pub fn show(ev: &NotifyEvent, settings: &Settings, has_junk: bool) {
     if !crate::kopru::kuruldu() {
         return;
     }
     if !QUEUE.push(Bekleyen {
         ev: ev.clone(),
-        eylemler,
+        eylemler: eylem_adlari(settings, has_junk),
+        kod_okundu: settings.otp_mark_read,
     }) {
         return;
     }
@@ -499,6 +529,7 @@ pub(crate) mod tests {
         Bekleyen {
             ev: olay(id, account, name, date),
             eylemler: vec!["yanit".into(), "sil".into()],
+            kod_okundu: true,
         }
     }
 
@@ -598,8 +629,53 @@ pub(crate) mod tests {
         let groups = group(&[Bekleyen {
             ev,
             eylemler: vec!["yanit".into()],
+            kod_okundu: true,
         }]);
         assert_eq!(groups[0].postalar[0].kod.as_deref(), Some("482913"));
+        // Kendiliğinden kopyalanmadı: ayar açık olsa da olağan bildirim.
+        assert!(!groups[0].postalar[0].kopyalandi);
+        assert!(!groups[0].postalar[0].okundu);
+    }
+
+    #[test]
+    fn kendiliginden_kopyalanan_kod_isaretlenir_okundu_ayara_bagli() {
+        let mut ev = olay(9, "is", "İş", 5);
+        ev.otp = Some("482913".into());
+        ev.otp_copied = true;
+        // Ayar açık: çekirdek postayı okundu saydı, bildirim süreli gösterilir.
+        let acik = Bekleyen {
+            ev: ev.clone(),
+            eylemler: Vec::new(),
+            kod_okundu: true,
+        };
+        let k = acik.kart();
+        assert!(k.kopyalandi && k.okundu);
+        let json = serde_json::to_value(&k).unwrap();
+        assert_eq!(json["kopyalandi"], true);
+        assert_eq!(json["okundu"], true);
+        // Ayar kapalı: posta okunmamış kalır, olağan bildirim (yalnız metin değişir).
+        let kapali = Bekleyen {
+            kod_okundu: false,
+            ..acik.clone()
+        };
+        let k = kapali.kart();
+        assert!(k.kopyalandi && !k.okundu);
+        let json = serde_json::to_value(&k).unwrap();
+        assert_eq!(json["kopyalandi"], true);
+        assert!(json.get("okundu").is_none());
+        // Kod bildirime girecek biçimde değilse "kopyalandı" da denmez.
+        let mut bozuk = acik.clone();
+        bozuk.ev.otp = Some("48 29".into());
+        let k = bozuk.kart();
+        assert!(k.kod.is_none() && !k.kopyalandi && !k.okundu);
+        // Kopyalanmayan postada alanlar hiç yazılmaz (Kotlin `false` okur).
+        let json = serde_json::to_value(bekleyen(1, "is", "İş", 1).kart()).unwrap();
+        assert!(json.get("kopyalandi").is_none());
+        assert!(json.get("okundu").is_none());
+        // Yığında posta başına taşınır.
+        let groups = group(&[acik, bekleyen(2, "is", "İş", 9)]);
+        assert!(groups[0].postalar[0].okundu);
+        assert!(!groups[0].postalar[1].okundu);
     }
 
     #[test]
@@ -708,7 +784,7 @@ pub(crate) mod tests {
     #[test]
     fn masaustunde_gosterme_sessizce_gecer() {
         // Köprü yok: kuyruğa girmez, panik yok.
-        show(&olay(1, "is", "İş", 1), vec![]);
+        show(&olay(1, "is", "İş", 1), &ayar(vec![]), false);
         reconcile_soon();
     }
 }

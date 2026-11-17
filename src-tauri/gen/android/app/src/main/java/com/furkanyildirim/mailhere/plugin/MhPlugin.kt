@@ -74,7 +74,9 @@ class HaptikArgs {
  *
  * Bildirime dokunuş etkinliğe gelir ([bildirimdenAc]) ve `ArkaKopru.eylem`
  * ile Rust'a `ac` eylemi gider; çekirdek henüz dinlemiyorsa (soğuk açılış)
- * [Yasam] saklar, çekirdek açılınca `ArkaKopru.bekleyenler` ile alır.
+ * [Yasam] saklar, çekirdek açılınca `ArkaKopru.bekleyenler` ile alır. Başka
+ * uygulamadaki e-posta bağlantısı (`mailto:`; [YazmaNiyeti]) aynı yoldan
+ * `yaz` eylemiyle gider ve yazma ekranını alıcılarla açar ([yazmaAc]).
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
@@ -82,12 +84,18 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
 
     init {
         Bildirimler.kanallar(ctx)
-        bildirimdenAc(activity.intent)
+        niyetiIsle(activity.intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        niyetiIsle(intent)
+    }
+
+    /** Etkinliği açan (soğuk açılış) ya da açık etkinliğe gelen niyet. */
+    private fun niyetiIsle(intent: Intent?) {
         bildirimdenAc(intent)
+        yazmaAc(intent)
     }
 
     /** Bildirime dokunuldu: bildirim kalkar, posta açılır (Rust `mh:open`). */
@@ -101,6 +109,19 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
         if (!ArkaKopru.eylemGonder(JSONObject().put("tur", "ac").put("id", id))) {
             Yasam.acilacakYaz(id)
         }
+    }
+
+    /**
+     * E-posta bağlantısı (`mailto:`, `VIEW` / `SENDTO`): yazma ekranı
+     * alıcılarla açılır (Rust `mh:navigate`). Çekirdek henüz dinlemiyorsa
+     * (soğuk açılış, parola kilidi) istek [Yasam]da bekler ve çekirdek
+     * açılınca alınır. Adres burada yorumlanmaz ve günlüğe yazılmaz.
+     */
+    private fun yazmaAc(intent: Intent?) {
+        val olay = YazmaNiyeti.olay(intent) ?: return
+        // Aynı niyet (ör. süreç yeniden başlatılırken) ikinci kez işlenmesin.
+        intent?.action = null
+        if (!ArkaKopru.eylemGonder(olay)) Yasam.yazilacakYaz(olay)
     }
 
     /** Seçilen belgenin görünen adı (`OpenableColumns.DISPLAY_NAME`); yoksa `null`. */

@@ -198,8 +198,9 @@ object ArkaKopru {
     }
 
     /**
-     * Çekirdek yokken alınan eylemler (kasadan; alınınca silinir) ve soğuk
-     * açılışta dokunulan bildirim: `[{ tur, id, … }, …]`.
+     * Çekirdek yokken alınan eylemler (kasadan; alınınca silinir), soğuk
+     * açılışta dokunulan bildirim ve bekleyen yazma isteği (`mailto:`
+     * bağlantısı): `[{ tur, id, … }, …]`.
      */
     @JvmStatic fun bekleyenler(ctx: Context): String {
         val eylemler = try {
@@ -208,6 +209,7 @@ object ArkaKopru {
             JSONArray()
         }
         Yasam.acilacakAl()?.let { eylemler.put(JSONObject().put("tur", "ac").put("id", it)) }
+        Yasam.yazilacakAl()?.let { eylemler.put(it) }
         return eylemler.toString()
     }
 

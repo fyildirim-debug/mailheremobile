@@ -14,6 +14,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.furkanyildirim.mailhere.plugin.ArkaPlan
 import com.furkanyildirim.mailhere.plugin.Yasam
+import com.furkanyildirim.mailhere.plugin.YazmaNiyeti
 
 class MainActivity : TauriActivity() {
   /** İlk arayüz ekranı hazır (ya da bekleme sınırı doldu): açılış ekranı kalkar. */
@@ -27,8 +28,14 @@ class MainActivity : TauriActivity() {
    * ile temiz başlatılır, dokunulan bildirimin niyeti korunur. `super`
    * çağrılır (Android zorunlu kılar; tao bilinmeyen etkinliği yok sayar) ve
    * etkinlik hemen kapanır.
+   *
+   * Geri yüklenen etkinlik (kayıtlı durumla; süreç ölmüş ya da etkinlik yok
+   * edilmiş, görev duruyor) Android'den eski niyetiyle gelir: içindeki e-posta
+   * bağlantısı yeniden yazma ekranı açmasın diye niyet işaretlenir
+   * ([YazmaNiyeti.E_GECMISTEN]; süreç yeniden başlatılırken de taşınır).
    */
   override fun onCreate(savedInstanceState: Bundle?) {
+    if (savedInstanceState != null) eskiNiyetiIsaretle()
     if (Yasam.yokEdildi) {
       super.onCreate(savedInstanceState)
       YenidenBaslatActivity.tetikle(this)
@@ -40,6 +47,14 @@ class MainActivity : TauriActivity() {
     Yasam.etkinlikVar = true
     // Yalnız soğuk açılışta: yeniden kurulan etkinlikte arayüz sinyali yeniden gelmez.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && savedInstanceState == null) acilisiTut()
+  }
+
+  private fun eskiNiyetiIsaretle() {
+    try {
+      intent?.putExtra(YazmaNiyeti.E_GECMISTEN, true)
+    } catch (e: Exception) {
+      // Dış uygulamanın bozuk ekleri: niyet zaten okunamaz, yok sayılır.
+    }
   }
 
   /**

@@ -2,6 +2,11 @@
 //! satır içi Yanıtla ve yanıtı geri alma. Uygulama ekranı açılmadan
 //! çekirdekte çalışır.
 //!
+//! Etkinliğe gelen yazma istekleri de aynı yoldan geçer ([`Eylem::Yaz`]):
+//! başka uygulamadaki `mailto:` bağlantısı (`VIEW` / `SENDTO`; alıcılar
+//! `mailto.rs`te ayrıştırılır) ve "Yeni posta" uygulama kısayolu. Bunlar
+//! pencere ister: arayüz hazır olunca `Platform::open_compose` ile açılır.
+//!
 //! Yol: bildirim düğmesi → `BildirimAlici` (Kotlin, `exported=false`) →
 //! `ArkaKopru.eylem(json)` (JNI, `kopru.rs`) → [`dispatch_global`] → hangi
 //! çekirdek açıksa (pencereli Tauri ya da etkinliksiz, `cekirdek.rs`) onun
@@ -21,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mh_app::headless::Headless;
-use mh_core::{AppError, AppResult, MessageId, NotifyAction, OutboxItem};
+use mh_core::{AppError, AppResult, ComposePrefill, MessageId, NotifyAction, OutboxItem};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
@@ -63,6 +68,16 @@ pub enum Eylem {
     },
     /// Anlık bildirim açıkken periyodik uyanma: bağlantılar denetlenir.
     Uyan,
+    /// Yazma ekranı: `mailto:` bağlantısı (`VIEW` / `SENDTO`) ya da "Yeni
+    /// posta" kısayolu. `adres` niyetin `mailto:` adresi (kısayolda boş),
+    /// `alicilar` niyetin `EXTRA_EMAIL` eki; ikisi de güvenilmez girdidir
+    /// (`mailto.rs` doğrular), günlüğe yazılmaz.
+    Yaz {
+        #[serde(default)]
+        adres: String,
+        #[serde(default)]
+        alicilar: Vec<String>,
+    },
 }
 
 impl Eylem {
@@ -76,7 +91,14 @@ impl Eylem {
             Eylem::Yanit { .. } => "yanit",
             Eylem::GeriAl { .. } => "geriAl",
             Eylem::Uyan => "uyan",
+            Eylem::Yaz { .. } => "yaz",
         }
+    }
+
+    /// Pencere isteyen eylem (posta açma, yazma ekranı): etkinliksiz
+    /// çekirdekte uygulanamaz, etkinlik açılınca yeniden okunur.
+    fn pencere_ister(&self) -> bool {
+        matches!(self, Eylem::Ac { .. } | Eylem::Yaz { .. })
     }
 
     /// Düğmenin çekirdek eylemi (yanıt, açma, uyanma hariç).
@@ -91,11 +113,34 @@ impl Eylem {
     }
 }
 
-/// Arayüz hazır mı; değilse bildirimden açılacak posta bekletilir.
+/// Arayüz hazır olunca gösterilecek şey.
+#[derive(Debug, Clone, PartialEq)]
+enum Acilacak {
+    /// Bildirimden açılan posta.
+    Posta(MessageId),
+    /// `mailto:` bağlantısından ya da kısayoldan açılan yazma ekranı.
+    Yazma(ComposePrefill),
+}
+
+impl Acilacak {
+    /// Pencere isteyen eylemin karşılığı; diğer eylemlerde `None`.
+    fn of(e: &Eylem) -> Option<Self> {
+        match e {
+            Eylem::Ac { id } => Some(Acilacak::Posta(*id)),
+            Eylem::Yaz { adres, alicilar } => {
+                Some(Acilacak::Yazma(crate::mailto::on_bilgi(adres, alicilar)))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Arayüz hazır mı; değilse bildirimden açılacak posta ya da açılacak yazma
+/// ekranı bekletilir (en son istenen).
 #[derive(Default)]
 pub struct UiGate {
     ready: AtomicBool,
-    pending: Mutex<Option<MessageId>>,
+    pending: Mutex<Option<Acilacak>>,
 }
 
 /// Ana pencerenin sayfası yüklendi: kısa bir süre sonra arayüz hazır sayılır
@@ -114,32 +159,41 @@ pub fn page_loaded(app: &AppHandle) {
             return;
         };
         gate.ready.store(true, Ordering::Release);
-        let id = gate
+        let bekleyen = gate
             .pending
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
-        if let Some(id) = id {
-            open(&app, id);
+        if let Some(a) = bekleyen {
+            open(&app, a);
         }
     });
 }
 
-fn open(app: &AppHandle, id: MessageId) {
-    if let Some(state) = app.try_state::<mh_app::AppState>() {
-        state.platform.open_main(app, Some(id));
+fn open(app: &AppHandle, a: Acilacak) {
+    let Some(state) = app.try_state::<mh_app::AppState>() else {
+        return;
+    };
+    match a {
+        Acilacak::Posta(id) => state.platform.open_main(app, Some(id)),
+        Acilacak::Yazma(prefill) => {
+            if let Err(e) = state.platform.open_compose(app, &prefill) {
+                tracing::warn!(code = %e.code, "yazma ekranı açılamadı");
+            }
+        }
     }
 }
 
-/// Posta açma isteği: arayüz hazırsa hemen, değilse sayfa yüklenince.
-fn open_when_ready(app: &AppHandle, id: MessageId) {
+/// Posta ya da yazma ekranı açma isteği: arayüz hazırsa hemen, değilse sayfa
+/// yüklenince.
+fn open_when_ready(app: &AppHandle, a: Acilacak) {
     let Some(gate) = app.try_state::<UiGate>() else {
-        return open(app, id);
+        return open(app, a);
     };
     if gate.ready.load(Ordering::Acquire) {
-        open(app, id);
+        open(app, a);
     } else {
-        *gate.pending.lock().unwrap_or_else(|e| e.into_inner()) = Some(id);
+        *gate.pending.lock().unwrap_or_else(|e| e.into_inner()) = Some(a);
     }
 }
 
@@ -177,11 +231,11 @@ pub fn setup(app: &AppHandle) {
 }
 
 /// Etkinliksiz çekirdek açıldı: bekleyen eylemler onda uygulanır (dokunuş
-/// pencere ister; etkinlik gelince yeniden okunmak üzere bırakılmaz,
-/// kullanıcı bildirime yeniden dokunur).
+/// ve yazma ekranı pencere ister; etkinlik gelince yeniden okunmak üzere
+/// bırakılmaz, kullanıcı bildirime ya da bağlantıya yeniden dokunur).
 pub fn bekleyenleri_uygula_basliksiz(h: &Arc<Headless>) {
     for e in bekleyenler() {
-        if matches!(e, Eylem::Ac { .. }) {
+        if e.pencere_ister() {
             continue;
         }
         dispatch_basliksiz(h, e);
@@ -196,8 +250,9 @@ pub fn dispatch_global(e: Eylem) -> bool {
         return true;
     }
     if let Some(h) = crate::cekirdek::basliksiz() {
-        if matches!(e, Eylem::Ac { .. }) {
-            // Pencere yok: dokunuş etkinliği açar, posta oradan açılır.
+        if e.pencere_ister() {
+            // Pencere yok: niyet etkinliği açar, posta ya da yazma ekranı
+            // oradan açılır (Kotlin isteği saklar).
             return false;
         }
         dispatch_basliksiz(&h, e);
@@ -209,8 +264,8 @@ pub fn dispatch_global(e: Eylem) -> bool {
 /// Eylemi pencereli çekirdeğin çalışma ortamına verir.
 fn dispatch(app: &AppHandle, e: Eylem) {
     tracing::debug!(eylem = e.kind(), "bildirim eylemi");
-    if let Eylem::Ac { id } = e {
-        return open_when_ready(app, id);
+    if let Some(a) = Acilacak::of(&e) {
+        return open_when_ready(app, a);
     }
     let app = app.clone();
     tauri::async_runtime::spawn(async move { run(&app, e).await });
@@ -245,7 +300,6 @@ async fn run(app: &AppHandle, e: Eylem) {
         return done(id, res).await;
     }
     match e {
-        Eylem::Ac { id } => open_when_ready(app, id),
         Eylem::Yanit { id, metin } => {
             let res = mh_app::notify_actions::reply(app, id, &metin).await;
             yanit_sonucu(id, &metin, res).await;
@@ -265,7 +319,10 @@ async fn run(app: &AppHandle, e: Eylem) {
                 state.jmap.sync_now();
             }
         }
-        Eylem::Okundu { .. }
+        // Pencere isteyenler `dispatch`te, düğmeler yukarıda ele alındı.
+        Eylem::Ac { .. }
+        | Eylem::Yaz { .. }
+        | Eylem::Okundu { .. }
         | Eylem::Arsivle { .. }
         | Eylem::Sil { .. }
         | Eylem::Istenmeyen { .. } => {}
@@ -290,6 +347,7 @@ async fn run_basliksiz(h: Arc<Headless>, e: Eylem) {
         }
         Eylem::Uyan => h.sync_now(),
         Eylem::Ac { .. }
+        | Eylem::Yaz { .. }
         | Eylem::Okundu { .. }
         | Eylem::Arsivle { .. }
         | Eylem::Sil { .. }
@@ -408,10 +466,57 @@ mod tests {
     }
 
     #[test]
+    fn yazma_istegi_kotlin_bicimini_okur() {
+        // `mailto:` bağlantısı: adres ve (varsa) EXTRA_EMAIL eki.
+        let e: Eylem = serde_json::from_str(
+            r#"{"tur":"yaz","adres":"mailto:ayse@ornek.com","alicilar":["ali@ornek.org"]}"#,
+        )
+        .unwrap();
+        assert_eq!(e.kind(), "yaz");
+        assert_eq!(e.action(), None);
+        assert!(e.pencere_ister());
+        let Some(Acilacak::Yazma(p)) = Acilacak::of(&e) else {
+            panic!("yazma ekranı beklenirdi");
+        };
+        assert_eq!(p.mode, mh_core::ComposeMode::New);
+        assert_eq!(
+            p.to.iter().map(|a| a.email.as_str()).collect::<Vec<_>>(),
+            vec!["ayse@ornek.com", "ali@ornek.org"]
+        );
+        // "Yeni posta" kısayolu alan taşımaz: boş yazma ekranı.
+        let e: Eylem = serde_json::from_str(r#"{"tur":"yaz"}"#).unwrap();
+        assert_eq!(
+            e,
+            Eylem::Yaz {
+                adres: String::new(),
+                alicilar: Vec::new()
+            }
+        );
+        let Some(Acilacak::Yazma(p)) = Acilacak::of(&e) else {
+            panic!("yazma ekranı beklenirdi");
+        };
+        assert!(p.to.is_empty());
+        // Bozuk adres çökmez; alıcısız yazma ekranı açılır.
+        let e: Eylem = serde_json::from_str(r#"{"tur":"yaz","adres":"mailto:%ff%%<>"}"#).unwrap();
+        let Some(Acilacak::Yazma(p)) = Acilacak::of(&e) else {
+            panic!("yazma ekranı beklenirdi");
+        };
+        assert!(p.to.is_empty());
+        // Öteki eylemler pencere istemez; dokunuş ister.
+        assert_eq!(Acilacak::of(&Eylem::Ac { id: 8 }), Some(Acilacak::Posta(8)));
+        assert_eq!(Acilacak::of(&Eylem::Sil { id: 1 }), None);
+        assert!(!Eylem::Uyan.pencere_ister());
+    }
+
+    #[test]
     fn cekirdek_yokken_eylem_bekletilir() {
         // Masaüstü testinde kapı boştur: Kotlin eylemi kasaya yazar.
         assert!(!dispatch_global(Eylem::Sil { id: 1 }));
         assert!(!dispatch_global(Eylem::Uyan));
+        assert!(!dispatch_global(Eylem::Yaz {
+            adres: "mailto:ayse@ornek.com".into(),
+            alicilar: Vec::new(),
+        }));
         assert!(bekleyenler().is_empty());
     }
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Process
 import androidx.core.content.IntentCompat
+import com.furkanyildirim.mailhere.plugin.YazmaNiyeti
 
 /**
  * Süreci temiz yeniden başlatan trampolin; ayrı süreçte (`:yeniden`) çalışır,
@@ -29,10 +30,17 @@ class YenidenBaslatActivity : Activity() {
         val hedef = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         IntentCompat.getParcelableExtra(intent, E_NIYET, Intent::class.java)?.let { ozgun ->
-            // Bildirime dokunuş (POSTA_AC + posta kimliği) yeni süreçte açılır.
+            // Bildirime dokunuş (POSTA_AC + posta kimliği) ve e-posta bağlantısı
+            // (`mailto:`) yeni süreçte açılır.
             hedef.action = ozgun.action
             hedef.data = ozgun.data
             ozgun.extras?.let { hedef.putExtras(it) }
+            // Görev son uygulamalardan açıldıysa niyet eskidir: içindeki
+            // `mailto:` bağlantısı yeniden yazma ekranı açmasın (bayraklar
+            // yeni niyete taşınmaz; bilgi ekle gider).
+            if (ozgun.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) {
+                hedef.putExtra(YazmaNiyeti.E_GECMISTEN, true)
+            }
         }
         startActivity(hedef)
         finish()

@@ -46,6 +46,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Başka uygulamadaki e-posta bağlantısı (mailto:) ve "e-posta
+                 gönder" niyeti: yazma ekranı alıcılarla açılır. Yalnız mailto
+                 şeması; adres güvenilmez girdidir, Rust'ta ayrıştırılıp
+                 doğrulanır (YazmaNiyeti.kt, src/mailto.rs). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mailto" />
+            </intent-filter>
         </activity>
 
         <!-- QR tarayıcı (bilgisayardan aktarım): yalnız MhPlugin.scanQr açar,

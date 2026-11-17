@@ -1,5 +1,7 @@
 package com.furkanyildirim.mailhere.plugin
 
+import org.json.JSONObject
+
 /**
  * Sürecin yaşam durumu (süreç başına; `MainActivity`, hizmet ve alıcı
  * paylaşır):
@@ -12,6 +14,9 @@ package com.furkanyildirim.mailhere.plugin
  *   temiz başlatır.
  * - [acilacak]: soğuk açılışta dokunulan bildirimin postası; Rust çekirdeği
  *   açılınca `ArkaKopru.bekleyenler` ile alınır.
+ * - [yazilacak]: çekirdek dinlemezken (soğuk açılış, parola kilidi) gelen
+ *   yazma isteği (`mailto:` bağlantısı; [YazmaNiyeti] olayı); aynı yoldan
+ *   alınır. Yalnız bellekte durur, en son istek geçerlidir.
  */
 object Yasam {
     @Volatile
@@ -27,6 +32,16 @@ object Yasam {
     fun acilacakAl(): Long? = synchronized(this) {
         val v = acilacak
         acilacak = null
+        v
+    }
+
+    private var yazilacak: JSONObject? = null
+
+    fun yazilacakYaz(olay: JSONObject) = synchronized(this) { yazilacak = olay }
+
+    fun yazilacakAl(): JSONObject? = synchronized(this) {
+        val v = yazilacak
+        yazilacak = null
         v
     }
 }

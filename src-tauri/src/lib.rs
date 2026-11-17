@@ -5,7 +5,8 @@
 //! yeniden başlayınca hizmet pencere açılmadan eşitler ve bildirir), bildirim
 //! sağlığı (pil kısıtlaması), açılışta başlama ayarı, dokunsal geri
 //! bildirim, dosya seçme / kaydetme / paylaşma, QR tarayıcı (bilgisayardan
-//! aktarım). Komutlar ve çekirdek ortak katmanda (`mh-app`, alt modül
+//! aktarım), başka uygulamadaki `mailto:` bağlantısından yazma ekranı
+//! (`mailto.rs`). Komutlar ve çekirdek ortak katmanda (`mh-app`, alt modül
 //! `mailhere/`).
 //!
 //! Gradle `libmailhere_lib.so`yu yükler; etkinlik açılınca [`run`]
@@ -24,6 +25,7 @@ pub mod files;
 pub mod haptic;
 pub mod keystore;
 pub mod kopru;
+pub mod mailto;
 pub mod notify;
 pub mod platform;
 pub mod plugin;

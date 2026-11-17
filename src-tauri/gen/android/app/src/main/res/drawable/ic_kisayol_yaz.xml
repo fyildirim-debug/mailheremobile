@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Yeni posta" kısayolunun simgesi (Android 7.1; 8+ için drawable-v26'daki
+     uyarlanır simge): vurgu renginde daire üstünde arayüzün pen ikonu. İkon
+     24 ızgara, 1.6 çizgi, yuvarlak uç; 48 dp'lik alanın ortasında. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M24 2a22 22 0 1 0 0 44a22 22 0 1 0 0-44z" />
+    <group
+        android:translateX="12"
+        android:translateY="12">
+        <path
+            android:pathData="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M13.5 6.5l4 4"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

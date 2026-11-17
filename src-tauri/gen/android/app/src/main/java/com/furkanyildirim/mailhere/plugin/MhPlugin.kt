@@ -75,8 +75,9 @@ class HaptikArgs {
  * Bildirime dokunuş etkinliğe gelir ([bildirimdenAc]) ve `ArkaKopru.eylem`
  * ile Rust'a `ac` eylemi gider; çekirdek henüz dinlemiyorsa (soğuk açılış)
  * [Yasam] saklar, çekirdek açılınca `ArkaKopru.bekleyenler` ile alır. Başka
- * uygulamadaki e-posta bağlantısı (`mailto:`; [YazmaNiyeti]) aynı yoldan
- * `yaz` eylemiyle gider ve yazma ekranını alıcılarla açar ([yazmaAc]).
+ * uygulamadaki e-posta bağlantısı (`mailto:`) ve "Yeni posta" uygulama
+ * kısayolu ([YazmaNiyeti]) aynı yoldan `yaz` eylemiyle gider ve yazma
+ * ekranını açar ([yazmaAc]).
  */
 @TauriPlugin
 class MhPlugin(private val activity: Activity) : Plugin(activity) {
@@ -112,8 +113,9 @@ class MhPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /**
-     * E-posta bağlantısı (`mailto:`, `VIEW` / `SENDTO`): yazma ekranı
-     * alıcılarla açılır (Rust `mh:navigate`). Çekirdek henüz dinlemiyorsa
+     * E-posta bağlantısı (`mailto:`, `VIEW` / `SENDTO`) ya da "Yeni posta"
+     * kısayolu: yazma ekranı (bağlantıda alıcılarla) açılır (Rust
+     * `mh:navigate`). Çekirdek henüz dinlemiyorsa
      * (soğuk açılış, parola kilidi) istek [Yasam]da bekler ve çekirdek
      * açılınca alınır. Adres burada yorumlanmaz ve günlüğe yazılmaz.
      */

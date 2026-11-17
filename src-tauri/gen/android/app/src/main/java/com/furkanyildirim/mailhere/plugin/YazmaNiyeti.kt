@@ -8,7 +8,9 @@ import org.json.JSONObject
 /**
  * Etkinliğe gelen "yazma ekranını aç" niyetleri: başka uygulamadaki e-posta
  * bağlantısı (`ACTION_VIEW` / `ACTION_SENDTO`, `mailto:` şeması; manifestteki
- * niyet süzgeci). Niyet dış uygulamadan gelir, yani güvenilmez girdidir:
+ * niyet süzgeci) ve "Yeni posta" uygulama kısayolu ([EYLEM_YENI_POSTA];
+ * `res/xml/kisayollar.xml` → `KisayolActivity`). Bağlantı niyeti dış
+ * uygulamadan gelir, yani güvenilmez girdidir:
  * burada yalnız tanınır ve Rust'a aktarılacak olaya çevrilir; adres Rust'ta
  * ayrıştırılır ve doğrulanır (`src/mailto.rs`, birim testli). Hiçbir yol
  * istisna fırlatmaz; adres günlüğe yazılmaz.
@@ -19,6 +21,12 @@ import org.json.JSONObject
 object YazmaNiyeti {
     private const val TAG = "Mailhere"
     private const val SEMA = "mailto:"
+
+    /**
+     * "Yeni posta" kısayolunun eylemi (`res/xml/kisayollar.xml` ile aynı ad):
+     * alıcısız, boş yazma ekranı. Veri taşımaz.
+     */
+    const val EYLEM_YENI_POSTA = "com.furkanyildirim.mailhere.YENI_POSTA"
 
     /** `EXTRA_EMAIL` ekinden alınan en çok adres ve tek adresin en çok uzunluğu. */
     private const val EN_COK_EK = 20
@@ -43,6 +51,7 @@ object YazmaNiyeti {
         return try {
             if (gecmisten(intent)) return null
             when (intent.action) {
+                EYLEM_YENI_POSTA -> JSONObject().put("tur", "yaz")
                 Intent.ACTION_VIEW, Intent.ACTION_SENDTO -> postaBaglantisi(intent)
                 else -> null
             }

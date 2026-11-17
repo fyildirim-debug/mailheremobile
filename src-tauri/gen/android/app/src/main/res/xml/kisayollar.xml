@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Uygulama kısayolları (başlatıcıda simgeye uzun basış; Android 7.1+).
+     "Yeni posta": yazma ekranını açar. Hedef MainActivity değil trampolindir
+     (KisayolActivity): Android statik kısayol niyetine NEW_TASK | CLEAR_TASK
+     ekler, açık etkinlik yok edilmesin diye istek oradan iletilir. Eylem adı
+     YazmaNiyeti.EYLEM_YENI_POSTA ile aynıdır. Android 7.0'da (API 24)
+     kısayol yoktur; kaynak yok sayılır. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <shortcut
+        tools:targetApi="n_mr1"
+        android:shortcutId="yeni-posta"
+        android:enabled="true"
+        android:icon="@drawable/ic_kisayol_yaz"
+        android:shortcutShortLabel="@string/kisayol_yeni_posta"
+        android:shortcutLongLabel="@string/kisayol_yeni_posta_uzun">
+        <intent
+            android:action="com.furkanyildirim.mailhere.YENI_POSTA"
+            android:targetPackage="com.furkanyildirim.mailhere"
+            android:targetClass="com.furkanyildirim.mailhere.KisayolActivity" />
+    </shortcut>
+</shortcuts>

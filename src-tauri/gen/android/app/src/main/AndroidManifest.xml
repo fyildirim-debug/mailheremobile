@@ -57,7 +57,25 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="mailto" />
             </intent-filter>
+            <!-- Uygulama kısayolları (başlatıcıda simgeye uzun basış): "Yeni posta". -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/kisayollar" />
         </activity>
+
+        <!-- "Yeni posta" kısayolunun trampolini: Android statik kısayol
+             niyetine NEW_TASK | CLEAR_TASK ekler; hedef MainActivity olsaydı
+             açık etkinlik yok edilirdi (Tauri aynı süreçte ikinci webview
+             kuramaz). Bu görünmez etkinlik kendi boş görevinde açılır, isteği
+             MainActivity'ye iletir ve kapanır. Dışa kapalı: kısayolu sistem,
+             yayımlayan uygulamanın kimliğiyle başlatır. -->
+        <activity
+            android:name=".KisayolActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- QR tarayıcı (bilgisayardan aktarım): yalnız MhPlugin.scanQr açar,
              ekran yönü serbest, tam ekran koyu tema; döndürmede yeniden

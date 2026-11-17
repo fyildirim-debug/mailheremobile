@@ -9,6 +9,10 @@
     <string name="qr_torch_off">Feneri kapat</string>
     <string name="qr_wrong">Bu bir Mailhere aktarım kodu değil</string>
 
+    <!-- Uygulama kısayolu (res/xml/kisayollar.xml); İngilizcesi values-en/strings.xml. -->
+    <string name="kisayol_yeni_posta">Yeni posta</string>
+    <string name="kisayol_yeni_posta_uzun">Yeni posta yaz</string>
+
     <!-- Bildirimler (Bildirimler.kt, BildirimAlici.kt, ArkaPlanHizmeti.kt);
          İngilizcesi values-en/strings.xml. -->
     <string name="kanal_posta">Yeni posta</string>

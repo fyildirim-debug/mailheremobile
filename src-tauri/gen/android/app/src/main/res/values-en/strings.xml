@@ -6,6 +6,10 @@
     <string name="qr_torch_off">Turn off flashlight</string>
     <string name="qr_wrong">This isn\'t a Mailhere transfer code</string>
 
+    <!-- App shortcut (res/xml/kisayollar.xml). -->
+    <string name="kisayol_yeni_posta">New mail</string>
+    <string name="kisayol_yeni_posta_uzun">Write a new message</string>
+
     <!-- Notifications (Bildirimler.kt, BildirimAlici.kt, ArkaPlanHizmeti.kt). -->
     <string name="kanal_posta">New mail</string>
     <string name="kanal_posta_aciklama">New mail from people</string>

@@ -14,6 +14,10 @@
 //!   varsayılan Yanıtla, Sil, İstenmeyen; en çok üç). Hesabın İstenmeyen
 //!   kutusu yoksa o düğme gösterilmez ([`eylem_adlari`]).
 //! - Gövdede konu ve önizlemenin ilk satırı; ek adı ve posta gövdesi taşınmaz.
+//! - Postada doğrulama kodu varsa (`NotifyEvent.otp`) kod öbekli gösterilir
+//!   ("482 913") ve ilk düğme "Kodu kopyala" olur ([`kod_of`],
+//!   [`kod_obekli`]); kopyalama Kotlin'de, çekirdek kapalıyken de çalışır.
+//!   Kod günlüğe yazılmaz, kilit ekranındaki açık sürümde yer almaz.
 //! - Kilit ekranında (kullanıcı "hassas içeriği gizle" seçtiyse) yalnız hesap
 //!   adı ve "Yeni posta" görünür (`setPublicVersion`).
 //! - Düğmeler `eylem.rs`te işlenir.
@@ -49,6 +53,10 @@ const BATCH: Duration = Duration::from_millis(350);
 const RECONCILE: Duration = Duration::from_millis(1500);
 /// Önizleme satırının en çok uzunluğu (karakter).
 const PREVIEW_CHARS: usize = 160;
+/// Bildirime giren doğrulama kodunun uzunluk sınırları (çekirdek 4–8 hane ya
+/// da 6–8 harf-rakam bulur; pay bırakılır).
+const KOD_EN_AZ: usize = 4;
+const KOD_EN_COK: usize = 12;
 
 /// Tek posta bildirimi (Kotlin `ArkaKopru.bildir` → `Bildirimler.postaGoster`).
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -62,6 +70,13 @@ pub struct Kart {
     /// Önizlemenin ilk dolu satırı (boş olabilir).
     pub onizleme: String,
     pub zaman: Millis,
+    /// Postadaki doğrulama kodu (panoya yazılan ham değer); yoksa alan
+    /// yazılmaz. Varsa Kotlin ilk düğmeyi "Kodu kopyala" yapar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kod: Option<String>,
+    /// Kodun okunur hâli (bildirim metni için öbekli); `kod` ile birlikte dolu.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kod_gorunen: Option<String>,
 }
 
 /// Bir hesabın aynı yığında gelen postaları (eskiden yeniye) ve düğmeleri.
@@ -118,15 +133,43 @@ pub fn first_line(snippet: &str) -> String {
     cut
 }
 
+/// Çekirdeğin bulduğu doğrulama kodu bildirime girecek biçimdeyse döner:
+/// kırpılmış, 4–12 ASCII harf ya da rakam. Başka her şey (boş, boşluklu,
+/// işaretli, aşırı uzun) atılır; kod bildirim niyetinin ekinde taşındığı için
+/// yalnız beklenen biçim kabul edilir.
+pub fn kod_of(otp: Option<&str>) -> Option<String> {
+    let kod = otp?.trim();
+    let uygun = (KOD_EN_AZ..=KOD_EN_COK).contains(&kod.len())
+        && kod.bytes().all(|b| b.is_ascii_alphanumeric());
+    uygun.then(|| kod.to_owned())
+}
+
+/// Rakamlı kodu öbeklere ayırır: 6 hane "482 913", 8 hane "1234 5678";
+/// diğerleri olduğu gibi (arayüzün `groupCode` yardımcısıyla aynı kural).
+pub fn kod_obekli(kod: &str) -> String {
+    let orta = match kod.len() {
+        6 => 3,
+        8 => 4,
+        _ => return kod.to_owned(),
+    };
+    if !kod.bytes().all(|b| b.is_ascii_digit()) {
+        return kod.to_owned();
+    }
+    format!("{} {}", &kod[..orta], &kod[orta..])
+}
+
 /// Bildirim olayından Kotlin'e giden posta.
 pub fn kart(ev: &NotifyEvent) -> Kart {
     let m = &ev.message;
+    let kod = kod_of(ev.otp.as_deref());
     Kart {
         id: m.id,
         gonderen: m.from.label().trim().to_owned(),
         konu: m.subject.trim().to_owned(),
         onizleme: first_line(&m.snippet),
         zaman: m.date,
+        kod_gorunen: kod.as_deref().map(kod_obekli),
+        kod,
     }
 }
 
@@ -533,6 +576,57 @@ pub(crate) mod tests {
                 "zaman": 1000
             })
         );
+    }
+
+    #[test]
+    fn kodlu_posta_kodu_ham_ve_obekli_tasir() {
+        let mut ev = olay(9, "is", "İş", 5);
+        ev.otp = Some(" 482913 ".into());
+        let k = kart(&ev);
+        assert_eq!(k.kod.as_deref(), Some("482913"));
+        assert_eq!(k.kod_gorunen.as_deref(), Some("482 913"));
+        let json = serde_json::to_value(&k).unwrap();
+        assert_eq!(json["kod"], "482913");
+        assert_eq!(json["kodGorunen"], "482 913");
+        // Kodsuz postada alanlar hiç yazılmaz (Kotlin boş okur).
+        let json = serde_json::to_value(kart(&olay(9, "is", "İş", 5))).unwrap();
+        assert!(json.get("kod").is_none());
+        assert!(json.get("kodGorunen").is_none());
+        // Yığında da posta başına taşınır.
+        let groups = group(&[Bekleyen {
+            ev,
+            eylemler: vec!["yanit".into()],
+        }]);
+        assert_eq!(groups[0].postalar[0].kod.as_deref(), Some("482913"));
+    }
+
+    #[test]
+    fn kod_yalniz_beklenen_bicimde_kabul_edilir() {
+        assert_eq!(kod_of(Some("1234")).as_deref(), Some("1234"));
+        assert_eq!(kod_of(Some("A1B2C3")).as_deref(), Some("A1B2C3"));
+        assert_eq!(kod_of(Some("12345678")).as_deref(), Some("12345678"));
+        assert_eq!(kod_of(None), None);
+        assert_eq!(kod_of(Some("")), None);
+        assert_eq!(kod_of(Some("   ")), None);
+        assert_eq!(kod_of(Some("123")), None, "çok kısa");
+        assert_eq!(kod_of(Some("1234567890123")), None, "çok uzun");
+        assert_eq!(kod_of(Some("482 913")), None, "boşluklu");
+        assert_eq!(kod_of(Some("48-29")), None, "işaretli");
+        assert_eq!(kod_of(Some("１２３４５６")), None, "ASCII dışı rakam");
+        assert_eq!(kod_of(Some("12\n34")), None);
+    }
+
+    #[test]
+    fn kod_obekleri_alti_ve_sekiz_hanede() {
+        assert_eq!(kod_obekli("482913"), "482 913");
+        assert_eq!(kod_obekli("12345678"), "1234 5678");
+        // Diğer uzunluklar ve harfli kodlar olduğu gibi.
+        assert_eq!(kod_obekli("1234"), "1234");
+        assert_eq!(kod_obekli("12345"), "12345");
+        assert_eq!(kod_obekli("1234567"), "1234567");
+        assert_eq!(kod_obekli("A1B2C3"), "A1B2C3");
+        assert_eq!(kod_obekli("AB12CD34"), "AB12CD34");
+        assert_eq!(kod_obekli(""), "");
     }
 
     #[test]

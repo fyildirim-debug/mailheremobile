@@ -4,14 +4,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.RemoteInput
 import com.furkanyildirim.mailhere.R
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Bildirim düğmeleri (Yanıtla, Okundu, Arşivle, Sil, İstenmeyen, Geri al),
- * kaydırıp kapatma, anlık bildirimin "Kapat" düğmesi ve uyanma alarmı. Dışa
+ * Bildirim düğmeleri (Kodu kopyala, Yanıtla, Okundu, Arşivle, Sil, İstenmeyen,
+ * Geri al), kaydırıp kapatma, anlık bildirimin "Kapat" düğmesi ve uyanma alarmı. Dışa
  * kapalıdır (`exported=false`); niyetler yalnız bu uygulamanın
  * bildirimlerinden gelir.
  *
@@ -23,6 +24,10 @@ import org.json.JSONObject
  * (bildirim düğmesi arka plandan hizmet başlatmaya izin verir): hizmet
  * etkinliksiz çekirdeği açar, kuyruk boşalır ve eylem saniyeler içinde
  * uygulanır. Olmazsa uygulama açılınca uygulanır.
+ *
+ * "Kodu kopyala" Rust'a gitmez: doğrulama kodu düğme niyetinin ekindedir ve
+ * burada panoya yazılır; çekirdek kapalıyken de (yalnız bu alıcı ayaktayken)
+ * çalışır. Kod günlüğe yazılmaz.
  */
 class BildirimAlici : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -41,6 +46,10 @@ class BildirimAlici : BroadcastReceiver() {
         when (intent.action) {
             Bildirimler.EYLEM_SILINDI -> {
                 Bildirimler.silindi(ctx, p)
+                return
+            }
+            Bildirimler.EYLEM_KOD_KOPYALA -> {
+                kodKopyala(ctx, p)
                 return
             }
             Bildirimler.EYLEM_OKUNDU -> olay.put("tur", "okundu")
@@ -83,6 +92,22 @@ class BildirimAlici : BroadcastReceiver() {
                 sonuc.finish()
             }
         }.start()
+    }
+
+    /**
+     * Kodu panoya yazar ve kısa onay verir: bildirim "Kod kopyalandı"ya döner
+     * ve kendiliğinden kalkar; süreli bildirimi olmayan eski Android'de
+     * bildirim hemen kalkar, onay kısa iletiyle (Toast) verilir. Yazılamazsa
+     * bildirim yerinde kalır, ne olduğunu ve ne yapılabileceğini söyler.
+     */
+    private fun kodKopyala(ctx: Context, p: Posta) {
+        if (!Bildirimler.kodKopyala(ctx, p.kod)) {
+            Bildirimler.hata(ctx, p.id, ctx.getString(R.string.bildirim_kod_kopyalanamadi))
+            return
+        }
+        if (!Bildirimler.kodKopyalandi(ctx, p)) {
+            Toast.makeText(ctx.applicationContext, R.string.bildirim_kod_kopyalandi, Toast.LENGTH_SHORT).show()
+        }
     }
 
     companion object {

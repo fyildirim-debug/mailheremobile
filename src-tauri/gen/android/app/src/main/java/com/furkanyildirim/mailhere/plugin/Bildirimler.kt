@@ -5,12 +5,16 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.StyleSpan
@@ -26,6 +30,9 @@ import com.furkanyildirim.mailhere.R
  * Bildirimi gösterilen posta (`src/notify.rs` → `Kart`, hesap bilgisi ve
  * kullanıcının seçtiği düğmelerle). [eylemler] Kotlin düğme adlarıdır
  * (`yanit`, `okundu`, `arsivle`, `sil`, `istenmeyen`), kullanıcının sırasıyla.
+ * [kod] postadaki doğrulama kodudur (panoya yazılan ham değer; yoksa boş),
+ * [kodGorunen] bildirim metninde görünen öbekli hâli ("482 913"). Kod
+ * günlüğe yazılmaz: bu sınıf hiçbir yerde metne çevrilip günlüğe verilmez.
  */
 data class Posta(
     val id: Long,
@@ -36,6 +43,8 @@ data class Posta(
     val onizleme: String,
     val zaman: Long,
     val eylemler: List<String> = emptyList(),
+    val kod: String = "",
+    val kodGorunen: String = "",
 )
 
 /**
@@ -56,6 +65,11 @@ data class Posta(
  *   bildirimin eklerinde saklanır; bildirim yeniden çizilince (hata, boş
  *   yanıt) aynı düğmeler kurulur. Dokununca posta açılır ([MainActivity] →
  *   [MhPlugin]).
+ * - Doğrulama kodu olan postada metin kodu öbekli gösterir ve ilk düğme
+ *   "Kodu kopyala" olur (kullanıcının düğmelerinden en çok ikisi kalır). Kod
+ *   bildirimin ve düğme niyetinin ekinde taşınır: [BildirimAlici] çekirdek
+ *   kapalıyken de panoya yazar ([kodKopyala], hassas içerik işaretiyle).
+ *   Kilit ekranındaki açık sürümde ve özette kod yoktur.
  *
  * Özet, etkin bildirimlerden yeniden kurulur; `notify`/`cancel` eşzamansız
  * olduğundan eklenen ve çıkan etiketler ayrıca verilir.
@@ -96,6 +110,17 @@ object Bildirimler {
     /** Android bildirimde en çok üç düğme gösterir (`mh_core::NOTIFY_ACTIONS_MAX`). */
     private const val EN_COK_DUGME = 3
 
+    /** "Kod kopyalandı" onayının ekranda kalma süresi. */
+    private const val KOD_ONAY_MS = 4_000L
+
+    /**
+     * Pano içeriği hassas (`ClipDescription.EXTRA_IS_SENSITIVE`, API 33); eski
+     * sürümlerde aynı anahtar düz metinle verilir ve yok sayılır.
+     */
+    private val HASSAS =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) ClipDescription.EXTRA_IS_SENSITIVE
+        else "android.content.extra.IS_SENSITIVE"
+
     // Bildirim ve niyet ekleri.
     const val E_ID = "mh.id"
     const val E_HESAP = "mh.hesap"
@@ -105,6 +130,8 @@ object Bildirimler {
     const val E_ONIZLEME = "mh.onizleme"
     const val E_ZAMAN = "mh.zaman"
     const val E_EYLEMLER = "mh.eylemler"
+    const val E_KOD = "mh.kod"
+    const val E_KOD_GORUNEN = "mh.kodGorunen"
     const val E_KUYRUK = "mh.kuyruk"
 
     /**
@@ -136,6 +163,7 @@ object Bildirimler {
     const val EYLEM_ISTENMEYEN = "com.furkanyildirim.mailhere.ISTENMEYEN"
     const val EYLEM_YANIT = "com.furkanyildirim.mailhere.YANIT"
     const val EYLEM_GERI_AL = "com.furkanyildirim.mailhere.GERI_AL"
+    const val EYLEM_KOD_KOPYALA = "com.furkanyildirim.mailhere.KOD_KOPYALA"
     const val EYLEM_SILINDI = "com.furkanyildirim.mailhere.SILINDI"
     const val EYLEM_ARKA_KAPAT = "com.furkanyildirim.mailhere.ARKA_KAPAT"
     const val EYLEM_UYAN = "com.furkanyildirim.mailhere.UYAN"
@@ -276,6 +304,50 @@ object Bildirimler {
     }
 
     /**
+     * Doğrulama kodunu panoya yazar; başarısızsa `false`. İçerik hassas
+     * işaretlenir: Android 13+ pano önizlemesinde kod gizlenir. Arka plandan
+     * panoya yazmak serbesttir (yalnız okumak odak ister); çekirdek gerekmez.
+     */
+    fun kodKopyala(ctx: Context, kod: String): Boolean {
+        if (kod.isEmpty()) return false
+        return try {
+            val pano = ctx.getSystemService(ClipboardManager::class.java) ?: return false
+            val kirpinti = ClipData.newPlainText(ctx.getString(R.string.bildirim_kod_etiket), kod)
+            kirpinti.description.extras = PersistableBundle().apply { putBoolean(HASSAS, true) }
+            pano.setPrimaryClip(kirpinti)
+            true
+        } catch (e: Exception) {
+            // Kod ve istisna iletisi günlüğe yazılmaz.
+            Log.w(TAG, "kod panoya yazılamadı: ${e.javaClass.simpleName}")
+            false
+        }
+    }
+
+    /**
+     * Kod panoya yazıldı: bildirim kısa bir onaya döner ("Kod kopyalandı") ve
+     * birkaç saniye sonra kendiliğinden kalkar. Posta okunmamış kalır; özetten
+     * düşer. Onay bildirimi kodu taşımaz. Android 8'den önce süreli bildirim
+     * yoktur: bildirim hemen kalkar, `false` döner (çağıran kısa ileti gösterir).
+     */
+    fun kodKopyalandi(ctx: Context, p: Posta): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            kaldir(ctx, listOf(p.id))
+            return false
+        }
+        val kodsuz = p.copy(kod = "", kodGorunen = "")
+        val metin = ctx.getString(R.string.bildirim_kod_kopyalandi)
+        val b = postaKurucu(ctx, kodsuz, BILGI)
+            .setContentText(metin)
+            .setContentIntent(acmaNiyeti(ctx, kodsuz))
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setTimeoutAfter(KOD_ONAY_MS)
+        gonder(ctx, ETIKET_POSTA + p.id, b.build())
+        ozetiYenile(ctx, p.hesap, p.hesapAdi, emptyList(), setOf(ETIKET_POSTA + p.id), olustur = false)
+        return true
+    }
+
+    /**
      * Çekirdek yokken basılan eylem kasaya yazıldı: Mailhere açılınca (ya da
      * arka plan hizmeti çekirdeği açınca) uygulanacağı yazar; dokununca
      * uygulama açılır ve kuyruk boşalır.
@@ -314,6 +386,8 @@ object Bildirimler {
             onizleme = x.getString(E_ONIZLEME) ?: "",
             zaman = x.getLong(E_ZAMAN, 0),
             eylemler = x.getStringArray(E_EYLEMLER)?.toList() ?: emptyList(),
+            kod = x.getString(E_KOD) ?: "",
+            kodGorunen = x.getString(E_KOD_GORUNEN) ?: "",
         )
     }
 
@@ -326,6 +400,10 @@ object Bildirimler {
         putString(E_ONIZLEME, p.onizleme)
         putLong(E_ZAMAN, p.zaman)
         putStringArray(E_EYLEMLER, p.eylemler.toTypedArray())
+        if (p.kod.isNotEmpty()) {
+            putString(E_KOD, p.kod)
+            putString(E_KOD_GORUNEN, p.kodGorunen)
+        }
     }
 
     private fun vurgu(ctx: Context) = ContextCompat.getColor(ctx, R.color.vurgu)
@@ -333,6 +411,10 @@ object Bildirimler {
     private fun konuOf(ctx: Context, p: Posta) = p.konu.ifBlank { ctx.getString(R.string.bildirim_konu_yok) }
 
     private fun baslikOf(ctx: Context, p: Posta) = p.gonderen.ifBlank { ctx.getString(R.string.app_name) }
+
+    /** "Doğrulama kodu: 482 913"; postada kod yoksa `null`. */
+    private fun kodSatiri(ctx: Context, p: Posta): String? =
+        if (p.kod.isEmpty()) null else ctx.getString(R.string.bildirim_kod, p.kodGorunen.ifBlank { p.kod })
 
     /** Kilit ekranındaki açık sürüm: hesap adı ve kısa metin, içerik yok. */
     private fun acikSurum(ctx: Context, hesapAdi: String, metin: String): Notification =
@@ -364,19 +446,25 @@ object Bildirimler {
             .addExtras(x)
     }
 
-    /** Konu kalın, altında önizlemenin ilk satırı. */
-    private fun govde(konu: String, onizleme: String): CharSequence {
-        val s = SpannableStringBuilder(konu)
-        s.setSpan(StyleSpan(Typeface.BOLD), 0, konu.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    /**
+     * İlk satır kalın: kod varsa kod satırı (altında konu), yoksa konu; en
+     * altta önizlemenin ilk satırı.
+     */
+    private fun govde(kod: String?, konu: String, onizleme: String): CharSequence {
+        val ilk = kod ?: konu
+        val s = SpannableStringBuilder(ilk)
+        s.setSpan(StyleSpan(Typeface.BOLD), 0, ilk.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (kod != null) s.append('\n').append(konu)
         if (onizleme.isNotBlank()) s.append('\n').append(onizleme)
         return s
     }
 
     private fun yeniPosta(ctx: Context, p: Posta, sessiz: Boolean): Notification {
         val konu = konuOf(ctx, p)
+        val kod = kodSatiri(ctx, p)
         val b = postaKurucu(ctx, p)
-            .setContentText(konu)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(govde(konu, p.onizleme)))
+            .setContentText(kod ?: konu)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(govde(kod, konu, p.onizleme)))
             .setContentIntent(acmaNiyeti(ctx, p))
             .setDeleteIntent(alici(ctx, EYLEM_SILINDI, p))
             .setAutoCancel(true)
@@ -387,9 +475,18 @@ object Bildirimler {
         return b.build()
     }
 
-    /** Kullanıcının seçtiği düğmeler, kendi sırasıyla; en çok üç. */
+    /**
+     * Kullanıcının seçtiği düğmeler, kendi sırasıyla; en çok üç. Postada
+     * doğrulama kodu varsa ilk düğme "Kodu kopyala" olur ve kullanıcının
+     * düğmelerinden ilk ikisi kalır.
+     */
     private fun eylemler(ctx: Context, b: NotificationCompat.Builder, p: Posta) {
-        for (ad in p.eylemler.distinct().take(EN_COK_DUGME)) {
+        var kalan = EN_COK_DUGME
+        if (p.kod.isNotEmpty()) {
+            b.addAction(dugme(ctx, p, R.drawable.ic_kopyala, R.string.bildirim_kod_kopyala, EYLEM_KOD_KOPYALA, NotificationCompat.Action.SEMANTIC_ACTION_NONE))
+            kalan -= 1
+        }
+        for (ad in p.eylemler.distinct().take(kalan)) {
             val eylem = when (ad) {
                 DUGME_YANIT -> yanitEylemi(ctx, p)
                 DUGME_OKUNDU -> dugme(ctx, p, R.drawable.ic_okundu, R.string.bildirim_okundu, EYLEM_OKUNDU, NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)

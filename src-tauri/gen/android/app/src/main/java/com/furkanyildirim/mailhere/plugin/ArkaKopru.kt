@@ -135,7 +135,8 @@ object ArkaKopru {
 
     /**
      * Yeni posta bildirimleri: `{ gruplar: [{ hesap, hesapAdi, eylemler: string[],
-     * postalar: [{ id, gonderen, konu, onizleme, zaman }] }] }` (`src/notify.rs`).
+     * postalar: [{ id, gonderen, konu, onizleme, zaman, kod?, kodGorunen? }] }] }`
+     * (`src/notify.rs`). `kod` postadaki doğrulama kodudur; günlüğe yazılmaz.
      */
     @JvmStatic fun bildir(ctx: Context, json: String) {
         val gruplar = JSONObject(json).optJSONArray("gruplar") ?: return
@@ -157,6 +158,8 @@ object ArkaKopru {
                     onizleme = p.optString("onizleme"),
                     zaman = p.optLong("zaman", 0),
                     eylemler = eylemler,
+                    kod = p.optString("kod"),
+                    kodGorunen = p.optString("kodGorunen"),
                 )
             }
             Bildirimler.postaGoster(ctx, hesap, hesapAdi, postalar.filter { it.id >= 0 })

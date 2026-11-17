@@ -22,6 +22,11 @@
     <string name="bildirim_yanitla">Reply</string>
     <string name="bildirim_sil">Delete</string>
     <string name="bildirim_istenmeyen">Spam</string>
+    <string name="bildirim_kod">Verification code: %1$s</string>
+    <string name="bildirim_kod_etiket">Verification code</string>
+    <string name="bildirim_kod_kopyala">Copy code</string>
+    <string name="bildirim_kod_kopyalandi">Code copied</string>
+    <string name="bildirim_kod_kopyalanamadi">The code couldn\'t be copied to the clipboard. Open the message in Mailhere and copy it from there.</string>
     <string name="bildirim_yanit_ipucu">Your reply</string>
     <string name="bildirim_yanit_kuyrukta">Your reply is sent when the timer ends. Tap Undo to cancel.</string>
     <string name="bildirim_yanit_gidiyor">Sending your reply.</string>

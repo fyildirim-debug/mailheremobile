@@ -26,6 +26,11 @@
     <string name="bildirim_yanitla">Yanıtla</string>
     <string name="bildirim_sil">Sil</string>
     <string name="bildirim_istenmeyen">İstenmeyen</string>
+    <string name="bildirim_kod">Doğrulama kodu: %1$s</string>
+    <string name="bildirim_kod_etiket">Doğrulama kodu</string>
+    <string name="bildirim_kod_kopyala">Kodu kopyala</string>
+    <string name="bildirim_kod_kopyalandi">Kod kopyalandı</string>
+    <string name="bildirim_kod_kopyalanamadi">Kod panoya kopyalanamadı. Postayı Mailhere\'de açıp kodu oradan kopyalayabilirsin.</string>
     <string name="bildirim_yanit_ipucu">Yanıtın</string>
     <string name="bildirim_yanit_kuyrukta">Yanıtın sayaç bitince gidecek. Vazgeçmek için Geri al.</string>
     <string name="bildirim_yanit_gidiyor">Yanıtın gönderiliyor.</string>

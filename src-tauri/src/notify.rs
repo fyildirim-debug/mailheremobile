@@ -491,6 +491,7 @@ pub(crate) mod tests {
             account_name: name.into(),
             account_color: "#4655D4".into(),
             otp: None,
+            otp_copied: false,
         }
     }
 
@@ -558,6 +559,7 @@ pub(crate) mod tests {
             account_name: "İş".into(),
             account_color: "#000".into(),
             otp: None,
+            otp_copied: false,
         };
         let k = kart(&ev);
         assert_eq!(k.id, 7);

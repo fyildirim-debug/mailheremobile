@@ -222,6 +222,13 @@ object ArkaKopru {
     /** Kilit açıldı: bildirim kalkar. */
     @JvmStatic fun kilitliKaldir(ctx: Context) = Bildirimler.kilitliKaldir(ctx)
 
+    /**
+     * Metni panoya yazar (Rust `kopru::panoya_yaz`; çekirdeğin `copy_text`i:
+     * yeni postadaki doğrulama kodu). Etkinlik ve odak gerekmez; içerik hassas
+     * işaretlenir ([Bildirimler.kodKopyala]). Metin günlüğe yazılmaz.
+     */
+    @JvmStatic fun panoyaYaz(ctx: Context, metin: String): Boolean = Bildirimler.kodKopyala(ctx, metin)
+
     private fun metinler(a: JSONArray?): List<String> {
         if (a == null) return emptyList()
         return (0 until a.length()).mapNotNull { a.optString(it).ifBlank { null } }

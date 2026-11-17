@@ -59,6 +59,10 @@ pub const KOTLIN_YONTEMLER: &[(&str, &str)] = &[
     ("anlikAcik", "(Landroid/content/Context;)Z"),
     ("kilitliGoster", "(Landroid/content/Context;)V"),
     ("kilitliKaldir", "(Landroid/content/Context;)V"),
+    (
+        "panoyaYaz",
+        "(Landroid/content/Context;Ljava/lang/String;)Z",
+    ),
 ];
 
 /// Rust'ın dışa verdiği JNI giriş noktaları (Kotlin `external fun` adları).
@@ -624,6 +628,35 @@ pub fn kilitli_kaldir() -> Result<(), String> {
     }
 }
 
+/// Metni sistem panosuna yazar (çekirdeğin `copy_text`i: yeni postadaki
+/// doğrulama kodu). Pencere ve odak gerekmez: Android panoya yazmaya arka
+/// plandan da izin verir (yalnız okumak odak ister); içerik hassas
+/// işaretlenir. `Ok(false)`: Kotlin yazamadı. Metin günlüğe yazılmaz.
+///
+/// `Ok(true)` isteğin sisteme verildiğini söyler, panoya girdiğini değil:
+/// üreticinin pano kısıtı (uygulama işlemi reddedilmişse) yazmayı sessizce
+/// yok sayar ve arka plandan geri okumak mümkün değildir.
+pub fn panoya_yaz(metin: &str) -> Result<bool, String> {
+    #[cfg(target_os = "android")]
+    {
+        android::with_env(|env, ctx, sinif| {
+            let m = android::jstr(env, metin)?;
+            let v = android::statik(
+                env,
+                sinif,
+                "panoyaYaz",
+                &[JValue::Object(ctx), JValue::Object(&m)],
+            )?;
+            Ok(v.z()?)
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = metin;
+        Err(yalniz_android())
+    }
+}
+
 /// "Anlık bildirim" açık mı (Kotlin tercihi; seçilmemişse açık).
 pub fn anlik_acik() -> Result<bool, String> {
     #[cfg(target_os = "android")]
@@ -711,5 +744,6 @@ mod tests {
         assert!(anlik_acik().is_err());
         assert!(kilitli_goster().is_err());
         assert!(kilitli_kaldir().is_err());
+        assert!(panoya_yaz("482913").is_err());
     }
 }

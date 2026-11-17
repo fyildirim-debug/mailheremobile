@@ -3,9 +3,12 @@
 # QR tarayıcı (kamera isteğe bağlı, etkinlik dışa kapalı, Play Hizmetleri /
 # ML Kit yok), bildirim alıcısı, anlık bildirim hizmeti (dışa kapalı,
 # specialUse, görevle durmaz), açılış alıcısı, yoklama işi, yeniden başlatma
-# trampolini (ayrı süreç), R8 sonrası eklenti komutları ve JNI köprüsü
-# (Kotlin sınıfı dex'te, Rust girişleri .so'da) ve .so dosyasının 16 KB
-# sayfa hizası. CI ve yerelde aynı betik.
+# trampolini (ayrı süreç), e-posta bağlantısı süzgeci (yalnız mailto; VIEW +
+# SENDTO), "Yeni posta" kısayolu (beyan, kısayol kaynağı, dışa kapalı
+# trampolin), bildirimde "Kodu kopyala" (eylem ve hassas pano işareti dex'te),
+# R8 sonrası eklenti komutları ve JNI köprüsü (Kotlin sınıfı dex'te, Rust
+# girişleri .so'da) ve .so dosyasının 16 KB sayfa hizası. CI ve yerelde aynı
+# betik.
 #
 #   scripts/apk-denetle.sh <apk> [--debug]
 #
@@ -119,6 +122,44 @@ YENIDEN="$(blok 'YenidenBaslatActivity')"
 echo "$YENIDEN" | grep -q 'android:exported.*=false' || sorun "YenidenBaslatActivity exported=false değil"
 echo "$YENIDEN" | grep -q 'android:process.*=":yeniden"' || sorun "YenidenBaslatActivity ayrı süreçte (:yeniden) değil"
 echo "$YENIDEN" | grep -q 'android:excludeFromRecents.*=true' || sorun "YenidenBaslatActivity excludeFromRecents=true değil"
+# E-posta bağlantısı: MainActivity mailto şeması için VIEW + SENDTO süzgeci
+# taşır (DEFAULT + BROWSABLE); başka şema (http, dosya, içerik) kabul etmez.
+ANA="$(agac 'mailhere.MainActivity"')"
+[ -n "$ANA" ] || sorun "MainActivity manifestte yok"
+echo "$ANA" | grep -q 'android:exported.*=true' || sorun "MainActivity exported=true değil (başlatıcı ve e-posta bağlantısı açamaz)"
+echo "$ANA" | grep -q '"android.intent.action.VIEW"' || sorun "MainActivity VIEW (mailto) süzgeci yok"
+echo "$ANA" | grep -q '"android.intent.action.SENDTO"' || sorun "MainActivity SENDTO (mailto) süzgeci yok"
+echo "$ANA" | grep -q '"android.intent.category.DEFAULT"' || sorun "MainActivity mailto süzgecinde DEFAULT kategorisi yok"
+echo "$ANA" | grep -q '"android.intent.category.BROWSABLE"' || sorun "MainActivity mailto süzgecinde BROWSABLE kategorisi yok"
+SEMALAR="$(echo "$ANA" | sed -n 's/.*android:scheme([^)]*)="\([^"]*\)".*/\1/p' | sort -u | tr '\n' ' ')"
+[ "$SEMALAR" = "mailto " ] || sorun "MainActivity yalnız mailto şemasını kabul etmeli; bulunan: ${SEMALAR:-yok}"
+echo "$ANA" | grep -Eq 'android:(host|path|pathPrefix|pathPattern|mimeType)\(' && sorun "MainActivity süzgecinde mailto dışında veri (host, yol, tür) olmamalı"
+# "Yeni posta" kısayolu: beyan MainActivity'de, hedef dışa kapalı trampolin
+# (kendi boş görevinde; statik kısayolun CLEAR_TASK'i açık etkinliği yok etmez).
+echo "$ANA" | grep -q '"android.app.shortcuts"' || sorun "MainActivity kısayol beyanı (android.app.shortcuts) yok"
+KISAYOL="$(blok 'KisayolActivity')"
+[ -n "$KISAYOL" ] || sorun "KisayolActivity manifestte yok"
+echo "$KISAYOL" | grep -q 'android:exported.*=false' || sorun "KisayolActivity exported=false değil"
+echo "$KISAYOL" | grep -q 'android:taskAffinity.*=""' || sorun "KisayolActivity taskAffinity boş değil (kısayol açık etkinliği yok eder)"
+echo "$KISAYOL" | grep -q 'android:excludeFromRecents.*=true' || sorun "KisayolActivity excludeFromRecents=true değil"
+echo "$KISAYOL" | grep -q 'intent-filter' && sorun "KisayolActivity niyet süzgeci taşımamalı"
+# Kısayol kaynağı (yolu R8 kısaltabilir; kaynak tablosundan bulunur).
+KISAYOL_YOLU="$("$AAPT2" dump resources "$APK" | awk '
+  / xml\/kisayollar$/ { bul = 1; next }
+  bul == 1 && / resource / { bul = 2 }
+  bul == 1 && /\(file\)/ { for (i = 1; i < NF; i++) if ($i == "(file)") yol = $(i + 1); bul = 2 }
+  END { if (yol != "") print yol }')"
+if [ -n "$KISAYOL_YOLU" ]; then
+  KISAYOLLAR="$("$AAPT2" dump xmltree --file "$KISAYOL_YOLU" "$APK")"
+  echo "$KISAYOLLAR" | grep -q 'android:shortcutId.*="yeni-posta"' || sorun "kısayol kaynağında yeni-posta kısayolu yok"
+  echo "$KISAYOLLAR" | grep -q 'android:action.*="com.furkanyildirim.mailhere.YENI_POSTA"' || sorun "kısayol eylemi YENI_POSTA değil"
+  echo "$KISAYOLLAR" | grep -q 'android:targetPackage.*="com.furkanyildirim.mailhere"' || sorun "kısayol hedef paketi com.furkanyildirim.mailhere değil"
+  echo "$KISAYOLLAR" | grep -q 'android:targetClass.*="com.furkanyildirim.mailhere.KisayolActivity"' || sorun "kısayol hedefi KisayolActivity değil"
+  echo "$KISAYOLLAR" | grep -q 'android:icon' || sorun "kısayol simgesi yok"
+  echo "$KISAYOLLAR" | grep -q 'android:shortcutShortLabel' || sorun "kısayol etiketi yok"
+else
+  sorun "kısayol kaynağı (xml/kisayollar) APK'da yok"
+fi
 if [ "$DEBUG" = 1 ]; then
   echo "$MANIFEST" | grep -q 'android:usesCleartextTraffic.*=true' || echo "Not: geliştirme paketinde usesCleartextTraffic beklenirdi"
 else
@@ -146,11 +187,16 @@ for ad in Lcom/furkanyildirim/mailhere/plugin/MhPlugin\; Lcom/furkanyildirim/mai
   Lcom/furkanyildirim/mailhere/plugin/ArkaPlanHizmeti\; Lcom/furkanyildirim/mailhere/plugin/ArkaPlanIsi\; \
   Lcom/furkanyildirim/mailhere/plugin/BootAlici\; Lcom/furkanyildirim/mailhere/plugin/ArkaKopru\; \
   Lcom/furkanyildirim/mailhere/MailhereApp\; Lcom/furkanyildirim/mailhere/YenidenBaslatActivity\; \
-  Lcom/furkanyildirim/mailhere/plugin/ItmeServisi\; \
+  Lcom/furkanyildirim/mailhere/plugin/ItmeServisi\; Lcom/furkanyildirim/mailhere/KisayolActivity\; \
   pilDurumu pilAyarlari arkaPlanDurumu arkaPlanAyarla acilisDurumu acilisAyarla haptic openNotificationSettings \
   kasaOku kasaYaz kasaSil yanitKuyrukta yanitGeriAlindi bildirimlerAcik bekleyenler anlikAcik kilitliGoster kilitliKaldir \
   cekirdekBaslat cekirdekDurdur cekirdekDurumu tekSefer; do
   grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok (R8 sildi mi?)"
+done
+# Bildirimde "Kodu kopyala" (kod düğme niyetinin ekinde; pano içeriği hassas
+# işaretli) ve "Yeni posta" kısayolunun eylemi küçültmeden sağ çıkmış olmalı.
+for ad in com.furkanyildirim.mailhere.KOD_KOPYALA android.content.extra.IS_SENSITIVE com.furkanyildirim.mailhere.YENI_POSTA; do
+  grep -l -a -F "$ad" "$TMP"/dex/classes*.dex > /dev/null 2>&1 || sorun "dex'te $ad yok"
 done
 # Ön plan hizmetinin kanalı en düşük önemle yeni kimlikte (durum çubuğunda
 # simge yok); kanal önemi sonradan değişmediği için eski kimlik silinir.
